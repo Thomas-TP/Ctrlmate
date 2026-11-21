@@ -1,0 +1,26 @@
+# Ctrlmate udev rules — non-root USB HID access for native PC RGB & AIO controllers
+# Install to /etc/udev/rules.d/99-ctrlmate.rules and run:
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# NZXT (Kraken AIO, Smart Device, RGB & Fan Controllers)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", MODE="0660", TAG+="uaccess"
+
+# Gigabyte / ITE Tech (IT5701 / IT5702 Motherboard ARGB Controllers)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", MODE="0660", TAG+="uaccess"
+
+# ASUS Aura USB Controllers
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b05", MODE="0660", TAG+="uaccess"
+
+# Corsair Lighting / Commander / Hydro Hubs
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1b1c", MODE="0660", TAG+="uaccess"
+
+# Lian Li Uni Fan / Galahad Controllers
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0cf2", MODE="0660", TAG+="uaccess"
+
+# MSI Mystic Light USB Controllers
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1462", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0db0", MODE="0660", TAG+="uaccess"
+
+# Aquacomputer USB Controllers
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c70", MODE="0660", TAG+="uaccess"

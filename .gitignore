@@ -1,0 +1,44 @@
+# Rust / Cargo
+/target
+**/target
+Cargo.lock
+!apps/desktop/src-tauri/Cargo.lock
+
+# Node / Bun / Frontend
+node_modules/
+dist/
+build/
+.vite/
+*.local
+
+# Tauri
+apps/desktop/src-tauri/gen/schemas/
+
+# .NET (optional Windows LHM bridge)
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# Python (Home Assistant integration)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime secrets & dev certs
+*.pem
+*.key
+.ctrlmate-dev/
+.env
+.env.*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/

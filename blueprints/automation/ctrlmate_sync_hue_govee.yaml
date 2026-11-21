@@ -1,0 +1,85 @@
+blueprint:
+  name: "Ctrlmate — Sync Philips Hue / Govee Room Lighting with PC"
+  description: >
+    Synchronizes your Ctrlmate PC lighting (global or specific zones) with any
+    Philips Hue, Govee, or room Light Group — preserving brightness, RGB color,
+    and calibrated Kelvin color temperature (2000K-6500K) with smooth transitions.
+  domain: automation
+  input:
+    source_light:
+      name: Source Room Light / Group (Philips Hue, Govee, etc.)
+      selector:
+        entity:
+          domain: light
+    target_pc_lights:
+      name: Ctrlmate PC Light(s)
+      selector:
+        target:
+          entity:
+            integration: ctrlmate
+            domain: light
+    transition_seconds:
+      name: Transition duration (seconds)
+      default: 0.6
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 0.1
+          unit_of_measurement: s
+
+mode: restart
+
+trigger:
+  - trigger: state
+    entity_id: !input source_light
+
+action:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: !input source_light
+            state: "off"
+        sequence:
+          - action: light.turn_off
+            target: !input target_pc_lights
+            data:
+              transition: !input transition_seconds
+      - conditions:
+          - condition: state
+            entity_id: !input source_light
+            state: "on"
+        sequence:
+          - variables:
+              src: !input source_light
+              src_mode: "{{ state_attr(src, 'color_mode') }}"
+              src_bri: "{{ state_attr(src, 'brightness') | default(204, true) | int }}"
+              src_kelvin: "{{ state_attr(src, 'color_temp_kelvin') }}"
+              src_rgb: "{{ state_attr(src, 'rgb_color') }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ src_mode == 'color_temp' and src_kelvin is not none }}"
+                sequence:
+                  - action: light.turn_on
+                    target: !input target_pc_lights
+                    data:
+                      brightness: "{{ src_bri }}"
+                      color_temp_kelvin: "{{ [2000, [6500, src_kelvin | int] | min] | max }}"
+                      transition: !input transition_seconds
+              - conditions:
+                  - condition: template
+                    value_template: "{{ src_rgb is not none }}"
+                sequence:
+                  - action: light.turn_on
+                    target: !input target_pc_lights
+                    data:
+                      brightness: "{{ src_bri }}"
+                      rgb_color: "{{ src_rgb }}"
+                      transition: !input transition_seconds
+            default:
+              - action: light.turn_on
+                target: !input target_pc_lights
+                data:
+                  brightness: "{{ src_bri }}"
+                  transition: !input transition_seconds

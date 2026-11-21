@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust-core:
+    name: Rust Core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libhidapi-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Rust workspace unit tests
+        run: cargo test -p ctrlmate-protocol -p ctrlmate-rgb -p ctrlmate-cooling -p ctrlmate-hal -p ctrlmate-daemon
+
+  desktop-frontend:
+    name: Desktop UI (React 19 + TS + Tailwind v4)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --cwd apps/desktop
+      - run: bun run --cwd apps/desktop build
+
+  home-assistant-integration:
+    name: Home Assistant 2026.11 Integration
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check Python syntax & JSON manifests
+        run: |
+          python3 -m py_compile custom_components/ctrlmate/*.py
+          python3 -c "import json, glob; [json.load(open(p)) for p in ['hacs.json'] + glob.glob('custom_components/ctrlmate/**/*.json', recursive=True)]"

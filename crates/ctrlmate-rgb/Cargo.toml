@@ -1,0 +1,13 @@
+[package]
+name = "ctrlmate-rgb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ctrlmate-protocol = { path = "../ctrlmate-protocol" }
+serde.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

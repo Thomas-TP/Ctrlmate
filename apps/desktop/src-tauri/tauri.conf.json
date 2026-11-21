@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ctrlmate",
+  "version": "0.1.0",
+  "identifier": "org.ctrlmate.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Ctrlmate",
+        "width": 1160,
+        "height": 760,
+        "minWidth": 920,
+        "minHeight": 620,
+        "resizable": true,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:9488 ws://127.0.0.1:9488; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  }
+}

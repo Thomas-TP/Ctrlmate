@@ -1,0 +1,29 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connexion au PC Ctrlmate",
+        "description": "Saisissez l'adresse IP ou le nom d'hôte de l'ordinateur exécutant Ctrlmate.",
+        "data": {
+          "host": "Hôte / Adresse IP",
+          "port": "Port"
+        }
+      },
+      "pair": {
+        "title": "Appairage avec {name}",
+        "description": "Ouvrez Ctrlmate sur {name} ({host}), cliquez sur « Démarrer l'appairage » dans l'onglet Home Assistant, puis saisissez le code PIN à 6 chiffres.",
+        "data": {
+          "pin": "Code PIN à 6 chiffres"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de joindre Ctrlmate sur le réseau local.",
+      "invalid_pin": "Code PIN à 6 chiffres invalide ou expiré."
+    },
+    "abort": {
+      "already_configured": "Ce PC Ctrlmate est déjà configuré."
+    }
+  }
+}
