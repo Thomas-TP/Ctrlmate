@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  AppWindow,
+  Bell,
   Cpu,
+  Download,
   Fan,
+  Gamepad2,
   HardDrive,
   Home,
   KeyRound,
@@ -11,12 +15,13 @@ import {
   Mic,
   MonitorOff,
   Moon,
+  Play,
+  Plus,
   Power,
   RefreshCw,
   ShieldCheck,
   Sliders,
   Sun,
-  Terminal,
   Trash2,
   Video,
   Volume2,
@@ -37,10 +42,12 @@ import {
   updateSettings,
 } from './api';
 import type {
+  AllowlistedScript,
   CoolingPreset,
   DaemonSnapshot,
   EntityState,
   LightState,
+  OsUpdateState,
   PollingProfile,
   RemotePermissions,
   RgbColor,
@@ -74,6 +81,9 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string>('light_global');
+  const [newScriptName, setNewScriptName] = useState('');
+  const [newScriptExe, setNewScriptExe] = useState('');
+  const [newScriptArgs, setNewScriptArgs] = useState('');
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -159,6 +169,16 @@ export default function App() {
     const s = stateMap.get(id);
     return s?.value.kind === 'light' ? s.value.value : undefined;
   };
+
+  const updateVal = (): OsUpdateState | undefined => {
+    const s = stateMap.get('os_updates');
+    return s?.value.kind === 'update' ? s.value.value : undefined;
+  };
+
+  const audioOutputs = useMemo(() => {
+    const desc = snapshot?.manifest.entities.find((e) => e.id === 'audio_output');
+    return desc?.options ?? [];
+  }, [snapshot]);
 
   const unit: TemperatureUnit = snapshot?.temperature_unit ?? 'celsius';
   const haConnectedCount = snapshot?.paired_clients.filter((c) => c.connected).length ?? 0;
@@ -345,6 +365,13 @@ export default function App() {
                   <Card title="Confidentialité & Session">
                     <div className="space-y-3">
                       <StatusRow
+                        icon={<AppWindow className="h-4 w-4" />}
+                        label="Application active"
+                        active={boolVal('gaming_mode')}
+                        activeText={`${textVal('active_application') || 'Jeu'} · Gaming`}
+                        idleText={textVal('active_application') || 'Bureau'}
+                      />
+                      <StatusRow
                         icon={<Mic className="h-4 w-4" />}
                         label="Microphone"
                         active={boolVal('microphone_in_use')}
@@ -358,6 +385,12 @@ export default function App() {
                         activeText="Active"
                         idleText="Inactive"
                       />
+                      {boolVal('gaming_mode') && (
+                        <div className="flex items-center gap-1.5 pt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                          <Gamepad2 className="h-3.5 w-3.5" />
+                          <span>Mode Gaming détecté — remontée HA accélérée (2 s)</span>
+                        </div>
+                      )}
                     </div>
                   </Card>
 
@@ -701,55 +734,242 @@ export default function App() {
                   </div>
                 </Card>
 
-                <Card title="Audio">
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() =>
-                        sendCommand({
-                          action: 'set_switch',
-                          entity_id: 'audio_mute',
-                          state: !boolVal('audio_mute'),
-                        })
-                      }
-                      className="rounded-lg border border-neutral-200 p-2 dark:border-white/[0.08]"
-                    >
-                      {boolVal('audio_mute') ? (
-                        <VolumeX className="h-4 w-4 text-neutral-500" />
-                      ) : (
-                        <Volume2 className="h-4 w-4" />
-                      )}
-                    </button>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={numVal('master_volume') ?? 50}
-                      onChange={(e) =>
-                        sendCommand({
-                          action: 'set_number',
-                          entity_id: 'master_volume',
-                          value: Number(e.target.value),
-                        })
-                      }
-                      className="flex-1"
-                      style={{
-                        background: 'linear-gradient(90deg, #52525b 0%, #e4e4e7 100%)',
-                        borderRadius: '9999px',
-                      }}
-                    />
-                    <span className="tabular w-11 text-right text-xs font-medium">
-                      {Math.round(numVal('master_volume') ?? 50)} %
-                    </span>
+                <Card title="Audio (WASAPI / PipeWire)">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() =>
+                          sendCommand({
+                            action: 'set_switch',
+                            entity_id: 'audio_mute',
+                            state: !boolVal('audio_mute'),
+                          })
+                        }
+                        className="rounded-lg border border-neutral-200 p-2 dark:border-white/[0.08]"
+                      >
+                        {boolVal('audio_mute') ? (
+                          <VolumeX className="h-4 w-4 text-neutral-500" />
+                        ) : (
+                          <Volume2 className="h-4 w-4" />
+                        )}
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={numVal('master_volume') ?? 50}
+                        onChange={(e) =>
+                          sendCommand({
+                            action: 'set_number',
+                            entity_id: 'master_volume',
+                            value: Number(e.target.value),
+                          })
+                        }
+                        className="flex-1"
+                        style={{
+                          background: 'linear-gradient(90deg, #52525b 0%, #e4e4e7 100%)',
+                          borderRadius: '9999px',
+                        }}
+                      />
+                      <span className="tabular w-11 text-right text-xs font-medium">
+                        {Math.round(numVal('master_volume') ?? 50)} %
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs text-neutral-500">Sortie audio par défaut</span>
+                      <select
+                        value={textVal('audio_output')}
+                        onChange={async (e) => {
+                          const r = await sendCommand({
+                            action: 'set_select',
+                            entity_id: 'audio_output',
+                            option: e.target.value,
+                          });
+                          notify(r.message);
+                        }}
+                        className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 dark:border-white/[0.1] dark:bg-[#17191f] dark:text-neutral-100"
+                      >
+                        {audioOutputs.map((out) => (
+                          <option key={out} value={out}>
+                            {out}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </Card>
 
-                <Card title="Scripts personnalisés (liste blanche locale)">
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <Terminal className="h-4 w-4" />
-                    <span>
-                      Les scripts déclarés ici sont exposés comme boutons Home Assistant et exécutés
-                      uniquement en session utilisateur standard (jamais en administrateur/root).
-                    </span>
+                <Card title="Mises à jour système (Windows Update / PackageKit)">
+                  {(() => {
+                    const upd = updateVal();
+                    const pending = upd?.pending_count ?? 0;
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium">
+                              {upd?.in_progress
+                                ? 'Installation en cours…'
+                                : pending > 0
+                                  ? `${pending} mise(s) à jour en attente`
+                                  : 'Système à jour'}
+                            </div>
+                            <div className="mt-0.5 text-xs text-neutral-500">
+                              {upd?.installed_version ?? snapshot.manifest.host.os_version}
+                              {upd?.reboot_required ? ' · Redémarrage requis' : ''}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                const r = await sendCommand({ action: 'check_os_updates' });
+                                notify(r.message);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-100 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Vérifier
+                            </button>
+                            {pending > 0 && (
+                              <button
+                                disabled={upd?.in_progress}
+                                onClick={async () => {
+                                  const r = await sendCommand({ action: 'install_os_updates' });
+                                  notify(r.message);
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Installer
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => {
+                                const r = await sendCommand({
+                                  action: 'send_notification',
+                                  title: 'Ctrlmate',
+                                  message: 'Notification bureau opérationnelle.',
+                                });
+                                notify(r.message);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-100 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                            >
+                              <Bell className="h-3.5 w-3.5" />
+                              Test notif
+                            </button>
+                          </div>
+                        </div>
+
+                        {upd && upd.pending_titles.length > 0 && (
+                          <ul className="space-y-1 border-t border-neutral-200/70 pt-3 text-xs text-neutral-500 dark:border-white/[0.07]">
+                            {upd.pending_titles.map((t, i) => (
+                              <li key={i} className="truncate">
+                                • {t}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </Card>
+
+                <Card title="Scripts personnalisés (liste blanche → boutons Home Assistant)">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+                      <input
+                        value={newScriptName}
+                        onChange={(e) => setNewScriptName(e.target.value)}
+                        placeholder="Nom du bouton"
+                        className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                      />
+                      <input
+                        value={newScriptExe}
+                        onChange={(e) => setNewScriptExe(e.target.value)}
+                        placeholder="Exécutable (ex. notepad.exe)"
+                        className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                      />
+                      <input
+                        value={newScriptArgs}
+                        onChange={(e) => setNewScriptArgs(e.target.value)}
+                        placeholder="Arguments (optionnel)"
+                        className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!newScriptName.trim() || !newScriptExe.trim()) return;
+                          const slug = newScriptName
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]+/g, '_')
+                            .replace(/^_|_$/g, '');
+                          const nextItem: AllowlistedScript = {
+                            id: `${slug || 'cmd'}_${Date.now().toString(36).slice(-4)}`,
+                            name: newScriptName.trim(),
+                            executable: newScriptExe.trim(),
+                            args: newScriptArgs.trim() ? newScriptArgs.trim().split(/\s+/) : [],
+                            enabled: true,
+                          };
+                          const updated = await updateSettings({
+                            scripts: [...snapshot.scripts, nextItem],
+                          });
+                          setSnapshot(updated);
+                          setNewScriptName('');
+                          setNewScriptExe('');
+                          setNewScriptArgs('');
+                          notify(`Script « ${nextItem.name} » ajouté`);
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-neutral-900"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Ajouter
+                      </button>
+                    </div>
+
+                    {snapshot.scripts.length === 0 ? (
+                      <p className="text-xs text-neutral-500">
+                        Aucun script autorisé. Chaque script ajouté ici devient un bouton dans Home
+                        Assistant (exécuté uniquement en session utilisateur standard).
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {snapshot.scripts.map((sc) => (
+                          <div
+                            key={sc.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200/70 px-3 py-2 text-xs dark:border-white/[0.07]"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-medium">{sc.name}</div>
+                              <div className="tabular truncate text-neutral-500">
+                                {sc.executable} {sc.args.join(' ')}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                onClick={async () => {
+                                  const r = await pressButton(`script_${sc.id}`);
+                                  notify(r.message);
+                                }}
+                                title="Exécuter"
+                                className="rounded-md border border-neutral-200 p-1.5 hover:bg-neutral-100 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                              >
+                                <Play className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const next = snapshot.scripts.filter((x) => x.id !== sc.id);
+                                  setSnapshot(await updateSettings({ scripts: next }));
+                                }}
+                                title="Supprimer"
+                                className="rounded-md p-1.5 text-neutral-500 hover:text-red-500"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Card>
               </div>

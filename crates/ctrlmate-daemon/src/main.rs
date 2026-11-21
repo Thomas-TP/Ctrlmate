@@ -62,12 +62,12 @@ async fn main() -> Result<()> {
         sw_version.clone(),
         cfg.security_mode,
     );
-    let manifest = collector.build_manifest();
-    let initial_states = collector.poll_states();
+    let manifest = collector.build_manifest(&cfg.scripts);
+    let (initial_states, _) = collector.poll_states();
 
     if cli.print_telemetry {
         tokio::time::sleep(Duration::from_millis(250)).await;
-        let fresh_states = collector.poll_states();
+        let (fresh_states, _) = collector.poll_states();
         let out = serde_json::json!({
             "manifest": manifest,
             "states": fresh_states,
@@ -121,6 +121,16 @@ async fn main() -> Result<()> {
         loop {
             interval.tick().await;
             poll_state.tick_poll().await;
+        }
+    });
+
+    // Background OS Update checker (initial scan 15s after start, then every 6 hours)
+    let update_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        loop {
+            update_state.spawn_update_scan();
+            tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
         }
     });
 

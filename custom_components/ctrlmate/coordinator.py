@@ -54,6 +54,7 @@ class CtrlmateCoordinator:
         self.expected_fp: str = entry.data.get(CONF_CERT_FINGERPRINT, "").lower()
 
         self.connected: bool = False
+        self.parent_device_id: str | None = None
         self.manifest: dict[str, Any] = {}
         self.states: dict[str, dict[str, Any]] = {}
 

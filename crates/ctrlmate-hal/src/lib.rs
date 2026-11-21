@@ -1,5 +1,7 @@
 //! Cross-platform hardware & OS telemetry collector (Zero-Kernel / Anti-Cheat Safe by default).
 
+pub mod activity;
+pub mod audio;
 pub mod conflicts;
 pub mod gpu;
 pub mod hid;
@@ -7,12 +9,13 @@ pub mod os_control;
 pub mod smart_poll;
 pub mod storage;
 pub mod system;
+pub mod updates;
 
 use chrono::Utc;
 use ctrlmate_cooling::{CoolingWatchdog, ThermalReadings, ThermalSafetyConfig};
 use ctrlmate_protocol::{
-    ChildDeviceInfo, CoolingPreset, DetectedHidDevice, DeviceCategory, DeviceManifest,
-    EntityCategory, EntityDescriptor, EntityPlatform, EntityState, EntityValue,
+    AllowlistedScript, ChildDeviceInfo, CoolingPreset, DetectedHidDevice, DeviceCategory,
+    DeviceManifest, EntityCategory, EntityDescriptor, EntityPlatform, EntityState, EntityValue,
     LightCapabilities, LightState, NumberRange, OsUpdateState, SecurityMode, SoftwareConflict,
     StateClass, PROTOCOL_VERSION,
 };
@@ -31,9 +34,8 @@ pub struct HardwareCollector {
     lighting: LightingEngine,
     cooling: CoolingWatchdog,
     os_updates: OsUpdateState,
-    master_volume: f64,
-    audio_muted: bool,
-    audio_output: String,
+    audio_outputs: Vec<String>,
+    last_gaming_mode: bool,
 }
 
 impl HardwareCollector {
@@ -55,10 +57,18 @@ impl HardwareCollector {
             }
         }
 
+        let audio_snap = audio::poll_audio();
+        let audio_outputs: Vec<String> = audio_snap
+            .outputs
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+
         info!(
-            "HardwareCollector initialized (GPU count: {}, known USB HID controllers: {})",
+            "HardwareCollector initialized (GPU count: {}, known USB HID controllers: {}, audio outputs: {})",
             gpu.device_count(),
-            hid_devices.len()
+            hid_devices.len(),
+            audio_outputs.len()
         );
 
         Self {
@@ -76,12 +86,11 @@ impl HardwareCollector {
                 pending_count: 0,
                 pending_titles: Vec::new(),
                 in_progress: false,
-                reboot_required: false,
+                reboot_required: updates::is_reboot_required(),
                 last_checked: None,
             },
-            master_volume: 50.0,
-            audio_muted: false,
-            audio_output: "Default Output".into(),
+            audio_outputs,
+            last_gaming_mode: false,
         }
     }
 
@@ -113,32 +122,42 @@ impl HardwareCollector {
         self.cooling.is_failsafe_active()
     }
 
-    pub fn set_audio_state(&mut self, volume: Option<f64>, muted: Option<bool>, output: Option<String>) {
-        if let Some(v) = volume {
-            self.master_volume = v.clamp(0.0, 100.0);
-        }
-        if let Some(m) = muted {
-            self.audio_muted = m;
-        }
-        if let Some(o) = output {
-            self.audio_output = o;
-        }
+    pub fn is_gaming_mode(&self) -> bool {
+        self.last_gaming_mode
+    }
+
+    pub fn os_updates(&self) -> &OsUpdateState {
+        &self.os_updates
+    }
+
+    pub fn set_os_updates(&mut self, state: OsUpdateState) {
+        self.os_updates = state;
+    }
+
+    pub fn set_os_updates_in_progress(&mut self, in_progress: bool) {
+        self.os_updates.in_progress = in_progress;
     }
 
     pub fn detect_conflicts(&self) -> Vec<SoftwareConflict> {
-        conflicts::detect_running_conflicts(&self.system.sys())
+        conflicts::detect_running_conflicts(self.system.sys())
     }
 
     /// Builds the full Home Assistant 2026.11 Device Manifest (Parent PC + Child Devices + Entities).
-    pub fn build_manifest(&mut self) -> DeviceManifest {
+    pub fn build_manifest(&mut self, scripts: &[AllowlistedScript]) -> DeviceManifest {
         self.system.refresh();
-        let host_info = self.system.host_info(&self.device_id, &self.sw_version, self.security_mode);
+        let audio_snap = audio::poll_audio();
+        if !audio_snap.outputs.is_empty() {
+            self.audio_outputs = audio_snap.outputs.into_iter().map(|d| d.name).collect();
+        }
+        let host_info =
+            self.system
+                .host_info(&self.device_id, &self.sw_version, self.security_mode);
 
         let mut child_devices = Vec::new();
         let mut entities = Vec::new();
 
-        // --- Parent PC Entities (Power, OS Updates, Session, Privacy, Global Lighting & Cooling) ---
-        entities.extend(self.parent_system_entities());
+        // --- Parent PC Entities (Power, OS Updates, Audio, Privacy, Activity, Global Lighting & Cooling, Scripts) ---
+        entities.extend(self.parent_system_entities(scripts));
 
         // --- Child Device: CPU ---
         let cpu_name = self.system.cpu_brand();
@@ -150,55 +169,34 @@ impl HardwareCollector {
             model: Some(cpu_name),
             hw_version: None,
         });
-        entities.push(EntityDescriptor {
-            id: "cpu_0_load".into(),
-            name: "Load".into(),
-            platform: EntityPlatform::Sensor,
-            child_device_id: Some("cpu_0".into()),
-            device_class: None,
-            state_class: Some(StateClass::Measurement),
-            unit_of_measurement: Some("%".into()),
-            icon: Some("mdi:cpu-64-bit".into()),
-            entity_category: None,
-            suggested_display_precision: Some(1),
-            options: vec![],
-            number_range: None,
-            light_caps: None,
-            exposed: true,
-        });
-        entities.push(EntityDescriptor {
-            id: "cpu_0_frequency".into(),
-            name: "Frequency".into(),
-            platform: EntityPlatform::Sensor,
-            child_device_id: Some("cpu_0".into()),
-            device_class: Some("frequency".into()),
-            state_class: Some(StateClass::Measurement),
-            unit_of_measurement: Some("MHz".into()),
-            icon: Some("mdi:sine-wave".into()),
-            entity_category: None,
-            suggested_display_precision: Some(0),
-            options: vec![],
-            number_range: None,
-            light_caps: None,
-            exposed: true,
-        });
+        entities.push(sensor_desc(
+            "cpu_0_load".into(),
+            "Load",
+            Some("cpu_0".into()),
+            None,
+            Some("%"),
+            Some("mdi:cpu-64-bit"),
+            Some(1),
+        ));
+        entities.push(sensor_desc(
+            "cpu_0_frequency".into(),
+            "Frequency",
+            Some("cpu_0".into()),
+            Some("frequency"),
+            Some("MHz"),
+            Some("mdi:sine-wave"),
+            Some(0),
+        ));
         #[cfg(target_os = "linux")]
-        entities.push(EntityDescriptor {
-            id: "cpu_0_temperature".into(),
-            name: "Temperature".into(),
-            platform: EntityPlatform::Sensor,
-            child_device_id: Some("cpu_0".into()),
-            device_class: Some("temperature".into()),
-            state_class: Some(StateClass::Measurement),
-            unit_of_measurement: Some("°C".into()),
-            icon: None,
-            entity_category: None,
-            suggested_display_precision: Some(1),
-            options: vec![],
-            number_range: None,
-            light_caps: None,
-            exposed: true,
-        });
+        entities.push(sensor_desc(
+            "cpu_0_temperature".into(),
+            "Temperature",
+            Some("cpu_0".into()),
+            Some("temperature"),
+            Some("°C"),
+            None,
+            Some(1),
+        ));
 
         // --- Child Device: Memory (RAM) ---
         let ram_total_gb = (self.system.total_memory_bytes() as f64 / 1_073_741_824.0).round();
@@ -210,38 +208,24 @@ impl HardwareCollector {
             model: Some(format!("{ram_total_gb:.0} GB RAM")),
             hw_version: None,
         });
-        entities.push(EntityDescriptor {
-            id: "memory_0_usage".into(),
-            name: "Usage".into(),
-            platform: EntityPlatform::Sensor,
-            child_device_id: Some("memory_0".into()),
-            device_class: None,
-            state_class: Some(StateClass::Measurement),
-            unit_of_measurement: Some("%".into()),
-            icon: Some("mdi:memory".into()),
-            entity_category: None,
-            suggested_display_precision: Some(1),
-            options: vec![],
-            number_range: None,
-            light_caps: None,
-            exposed: true,
-        });
-        entities.push(EntityDescriptor {
-            id: "memory_0_used".into(),
-            name: "Used".into(),
-            platform: EntityPlatform::Sensor,
-            child_device_id: Some("memory_0".into()),
-            device_class: Some("data_size".into()),
-            state_class: Some(StateClass::Measurement),
-            unit_of_measurement: Some("GiB".into()),
-            icon: Some("mdi:memory".into()),
-            entity_category: None,
-            suggested_display_precision: Some(2),
-            options: vec![],
-            number_range: None,
-            light_caps: None,
-            exposed: true,
-        });
+        entities.push(sensor_desc(
+            "memory_0_usage".into(),
+            "Usage",
+            Some("memory_0".into()),
+            None,
+            Some("%"),
+            Some("mdi:memory"),
+            Some(1),
+        ));
+        entities.push(sensor_desc(
+            "memory_0_used".into(),
+            "Used",
+            Some("memory_0".into()),
+            Some("data_size"),
+            Some("GiB"),
+            Some("mdi:memory"),
+            Some(2),
+        ));
 
         // --- Child Devices: GPUs (NVIDIA NVML / Linux DRM) ---
         for gpu_info in self.gpu.descriptors() {
@@ -354,7 +338,12 @@ impl HardwareCollector {
                 model: Some("Motherboard RGB Controller".into()),
                 hw_version: None,
             });
-            entities.push(light_desc("light_motherboard", "Lighting", Some("motherboard_0".into()), false));
+            entities.push(light_desc(
+                "light_motherboard",
+                "Lighting",
+                Some("motherboard_0".into()),
+                false,
+            ));
         }
         if self.lighting.zone_state("light_cooler").is_some() {
             child_devices.push(ChildDeviceInfo {
@@ -365,7 +354,12 @@ impl HardwareCollector {
                 model: Some("Kraken AIO".into()),
                 hw_version: None,
             });
-            entities.push(light_desc("light_cooler", "Lighting", Some("cooler_0".into()), false));
+            entities.push(light_desc(
+                "light_cooler",
+                "Lighting",
+                Some("cooler_0".into()),
+                false,
+            ));
         }
         if self.lighting.zone_state("light_gpu").is_some() {
             let gpu_child = child_devices
@@ -383,8 +377,8 @@ impl HardwareCollector {
         }
     }
 
-    fn parent_system_entities(&self) -> Vec<EntityDescriptor> {
-        vec![
+    fn parent_system_entities(&self, scripts: &[AllowlistedScript]) -> Vec<EntityDescriptor> {
+        let mut ents = vec![
             light_desc("light_global", "PC Lighting", None, true),
             EntityDescriptor {
                 id: "cooling_preset".into(),
@@ -419,6 +413,38 @@ impl HardwareCollector {
                 exposed: true,
             },
             EntityDescriptor {
+                id: "active_application".into(),
+                name: "Active Application".into(),
+                platform: EntityPlatform::Sensor,
+                child_device_id: None,
+                device_class: None,
+                state_class: None,
+                unit_of_measurement: None,
+                icon: Some("mdi:application".into()),
+                entity_category: None,
+                suggested_display_precision: None,
+                options: vec![],
+                number_range: None,
+                light_caps: None,
+                exposed: true,
+            },
+            EntityDescriptor {
+                id: "gaming_mode".into(),
+                name: "Gaming Mode".into(),
+                platform: EntityPlatform::BinarySensor,
+                child_device_id: None,
+                device_class: Some("running".into()),
+                state_class: None,
+                unit_of_measurement: None,
+                icon: Some("mdi:controller".into()),
+                entity_category: None,
+                suggested_display_precision: None,
+                options: vec![],
+                number_range: None,
+                light_caps: None,
+                exposed: true,
+            },
+            EntityDescriptor {
                 id: "os_updates".into(),
                 name: "OS Updates".into(),
                 platform: EntityPlatform::Update,
@@ -427,6 +453,22 @@ impl HardwareCollector {
                 state_class: None,
                 unit_of_measurement: None,
                 icon: Some("mdi:update".into()),
+                entity_category: Some(EntityCategory::Diagnostic),
+                suggested_display_precision: None,
+                options: vec![],
+                number_range: None,
+                light_caps: None,
+                exposed: true,
+            },
+            EntityDescriptor {
+                id: "reboot_required".into(),
+                name: "Reboot Required".into(),
+                platform: EntityPlatform::BinarySensor,
+                child_device_id: None,
+                device_class: Some("problem".into()),
+                state_class: None,
+                unit_of_measurement: None,
+                icon: Some("mdi:restart-alert".into()),
                 entity_category: Some(EntityCategory::Diagnostic),
                 suggested_display_precision: None,
                 options: vec![],
@@ -513,27 +555,43 @@ impl HardwareCollector {
                 icon: Some("mdi:speaker".into()),
                 entity_category: None,
                 suggested_display_precision: None,
-                options: vec!["Default Output".into()],
+                options: if self.audio_outputs.is_empty() {
+                    vec!["Default Output".into()]
+                } else {
+                    self.audio_outputs.clone()
+                },
                 number_range: None,
                 light_caps: None,
                 exposed: true,
             },
+            button_desc("check_os_updates", "Check OS Updates", "mdi:update"),
             button_desc("power_shutdown", "Shutdown", "mdi:power"),
             button_desc("power_restart", "Restart", "mdi:restart"),
             button_desc("power_sleep", "Sleep", "mdi:power-sleep"),
             button_desc("power_hibernate", "Hibernate", "mdi:snowflake"),
             button_desc("power_lock", "Lock Session", "mdi:lock"),
             button_desc("display_off", "Turn Off Displays", "mdi:monitor-off"),
-        ]
+        ];
+
+        for script in scripts.iter().filter(|s| s.enabled) {
+            ents.push(button_desc(
+                &format!("script_{}", script.id),
+                &script.name,
+                "mdi:script-text-play-outline",
+            ));
+        }
+
+        ents
     }
 
-    /// Samples all hardware providers and produces the current entity state list.
-    pub fn poll_states(&mut self) -> Vec<EntityState> {
+    /// Samples all hardware & OS providers and produces the current entity state list.
+    /// Returns `(states, audio_outputs_changed)`.
+    pub fn poll_states(&mut self) -> (Vec<EntityState>, bool) {
         let now = Utc::now();
         self.system.refresh();
         let mut states = Vec::new();
-
         let mut thermal = ThermalReadings::default();
+        let mut primary_gpu_load: Option<u32> = None;
 
         // CPU
         let cpu_load = f64::from(self.system.global_cpu_usage());
@@ -580,6 +638,9 @@ impl HardwareCollector {
         // GPUs
         for sample in self.gpu.poll() {
             let cid = format!("gpu_{}", sample.index);
+            if sample.index == 0 {
+                primary_gpu_load = sample.utilization_pct;
+            }
             if let Some(temp) = sample.temperature_c {
                 thermal.gpu_c = Some(thermal.gpu_c.map_or(temp, |prev| prev.max(temp)));
                 states.push(EntityState {
@@ -657,7 +718,10 @@ impl HardwareCollector {
         // Thermal watchdog evaluation
         let cooling_targets = self.cooling.evaluate(thermal);
         if cooling_targets.failsafe_triggered {
-            debug!("Thermal failsafe active! Effective preset: {:?}", cooling_targets.effective_preset);
+            debug!(
+                "Thermal failsafe active! Effective preset: {:?}",
+                cooling_targets.effective_preset
+            );
         }
         states.push(EntityState {
             id: "cooling_preset".into(),
@@ -681,6 +745,30 @@ impl HardwareCollector {
                 updated_at: now,
             });
         }
+
+        // Active foreground application & gaming mode
+        let app_info = activity::poll_active_app(primary_gpu_load);
+        self.last_gaming_mode = app_info.gaming_mode;
+        let mut app_attrs = BTreeMap::new();
+        if !app_info.process_name.is_empty() {
+            app_attrs.insert("process_name".into(), serde_json::json!(app_info.process_name));
+        }
+        if !app_info.window_title.is_empty() {
+            app_attrs.insert("window_title".into(), serde_json::json!(app_info.window_title));
+        }
+        app_attrs.insert("is_fullscreen".into(), serde_json::json!(app_info.is_fullscreen));
+        states.push(EntityState {
+            id: "active_application".into(),
+            value: EntityValue::Text(app_info.app_name),
+            attributes: app_attrs,
+            updated_at: now,
+        });
+        states.push(EntityState {
+            id: "gaming_mode".into(),
+            value: EntityValue::Bool(app_info.gaming_mode),
+            attributes: BTreeMap::new(),
+            updated_at: now,
+        });
 
         // Privacy indicators (Microphone & Webcam)
         let privacy = os_control::poll_privacy_sensors();
@@ -706,33 +794,49 @@ impl HardwareCollector {
             updated_at: now,
         });
 
-        // Audio & OS updates
+        // Real Audio (WASAPI / PipeWire)
+        let audio_snap = audio::poll_audio();
+        let new_outputs: Vec<String> = audio_snap.outputs.iter().map(|d| d.name.clone()).collect();
+        let audio_outputs_changed = !new_outputs.is_empty() && new_outputs != self.audio_outputs;
+        if audio_outputs_changed {
+            self.audio_outputs = new_outputs;
+        }
         states.push(EntityState {
             id: "master_volume".into(),
-            value: EntityValue::Float(self.master_volume),
+            value: EntityValue::Float(audio_snap.volume_percent),
             attributes: BTreeMap::new(),
             updated_at: now,
         });
         states.push(EntityState {
             id: "audio_mute".into(),
-            value: EntityValue::Bool(self.audio_muted),
+            value: EntityValue::Bool(audio_snap.muted),
             attributes: BTreeMap::new(),
             updated_at: now,
         });
         states.push(EntityState {
             id: "audio_output".into(),
-            value: EntityValue::Text(self.audio_output.clone()),
+            value: EntityValue::Text(audio_snap.current_output),
             attributes: BTreeMap::new(),
             updated_at: now,
         });
+
+        // OS Updates + Reboot Required
+        self.os_updates.reboot_required =
+            self.os_updates.reboot_required || updates::is_reboot_required();
         states.push(EntityState {
             id: "os_updates".into(),
             value: EntityValue::Update(self.os_updates.clone()),
             attributes: BTreeMap::new(),
             updated_at: now,
         });
+        states.push(EntityState {
+            id: "reboot_required".into(),
+            value: EntityValue::Bool(self.os_updates.reboot_required),
+            attributes: BTreeMap::new(),
+            updated_at: now,
+        });
 
-        states
+        (states, audio_outputs_changed)
     }
 }
 

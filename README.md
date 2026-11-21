@@ -14,7 +14,7 @@ Modern, open-source (**AGPLv3**) PC telemetry, lighting, cooling & system contro
 ## Architecture
 
 - **`crates/ctrlmate-protocol`** — Shared strongly-typed wire protocol (Parent PC + Home Assistant 2026.11 Child Devices, entities, commands, 6-digit PIN pairing & IPC).
-- **`crates/ctrlmate-hal`** — Cross-platform Hardware & OS Abstraction Layer (**Zero-Kernel / Anti-Cheat Safe** by default: NVIDIA NVML, NVMe SMART IOCTL / Linux `hwmon`, USB HID controller discovery, conflict detection, Smart Adaptive Polling).
+- **`crates/ctrlmate-hal`** — Cross-platform Hardware & OS Abstraction Layer (**Zero-Kernel / Anti-Cheat Safe** by default: NVIDIA NVML, NVMe SMART IOCTL / Linux `hwmon`, USB HID controller discovery, conflict detection, Smart Adaptive Polling, WASAPI/PipeWire volume & audio output switching, Windows Update WUA / Linux PackageKit, active app & gaming mode detection, privacy mic/webcam sensors, native desktop notifications & allowlisted scripts).
 - **`crates/ctrlmate-rgb`** — Perceptually calibrated Kelvin (`2000K–6500K`) + RGB lighting engine with 60 FPS smooth transitions for Philips Hue & Govee synchronization.
 - **`crates/ctrlmate-cooling`** — Preset-based cooling engine with non-bypassable Thermal Safety Watchdog.
 - **`crates/ctrlmate-daemon` (`ctrlmated`)** — Lightweight Rust background daemon (TLS 1.3 TOFU WebSocket Local Push, mDNS/Zeroconf discovery, 6-digit PIN pairing, local IPC).

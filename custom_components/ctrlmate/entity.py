@@ -1,19 +1,23 @@
-"""Base entity class following Home Assistant 2026.11 Child Devices & Lifecycle APIs."""
+"""Base entity class following Home Assistant 2026.11 ChildDeviceInfo & Lifecycle APIs."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from homeassistant.const import EntityCategory
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
 from .coordinator import CtrlmateCoordinator
 
+# Home Assistant 2026.9+ / 2026.11 native ChildDeviceInfo (inherits parent PC area automatically).
+_CHILD_DEVICE_INFO_CLS = getattr(dr, "ChildDeviceInfo", None)
+
 
 class CtrlmateEntity(Entity):
-    """Shared base entity for Ctrlmate with 2026.11 naming, Child Devices & in-place ID updates."""
+    """Shared base entity for Ctrlmate with 2026.11 naming, ChildDeviceInfo & in-place ID updates."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -42,8 +46,8 @@ class CtrlmateEntity(Entity):
         return self.coordinator.connected
 
     @property
-    def device_info(self) -> DeviceInfo:
-        """Bind entity either to the parent PC or to a dedicated HA 2026.11 Child Device."""
+    def device_info(self) -> Any:
+        """Bind entity to the parent PC or to an HA 2026.11 ChildDeviceInfo inheriting its Area."""
         host = self.coordinator.manifest.get("host", {})
         parent_ident = (DOMAIN, self.coordinator.device_id)
         child_id = self.descriptor.get("child_device_id")
@@ -52,9 +56,17 @@ class CtrlmateEntity(Entity):
             children = self.coordinator.manifest.get("child_devices", [])
             child = next((c for c in children if c.get("id") == child_id), None)
             if child:
+                child_ident = (DOMAIN, f"{self.coordinator.device_id}_{child_id}")
+                child_name = child.get("name", child_id)
+                if _CHILD_DEVICE_INFO_CLS is not None and self.coordinator.parent_device_id:
+                    return _CHILD_DEVICE_INFO_CLS(
+                        identifiers={child_ident},
+                        name=child_name,
+                        parent_device_id=self.coordinator.parent_device_id,
+                    )
                 return DeviceInfo(
-                    identifiers={(DOMAIN, f"{self.coordinator.device_id}_{child_id}")},
-                    name=child.get("name", child_id),
+                    identifiers={child_ident},
+                    name=child_name,
                     manufacturer=child.get("manufacturer") or host.get("manufacturer", "Ctrlmate"),
                     model=child.get("model"),
                     hw_version=child.get("hw_version"),

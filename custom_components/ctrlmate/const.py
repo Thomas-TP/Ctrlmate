@@ -24,4 +24,5 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.SWITCH,
     Platform.UPDATE,
+    Platform.NOTIFY,
 ]

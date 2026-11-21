@@ -45,6 +45,15 @@ class CtrlmateSelect(CtrlmateEntity, SelectEntity):
         self._attr_options = list(descriptor.get("options") or [])
 
     @property
+    def options(self) -> list[str]:
+        for desc in self.coordinator.manifest.get("entities", []):
+            if desc.get("id") == self.key:
+                opts = desc.get("options")
+                if opts:
+                    return list(opts)
+        return self._attr_options
+
+    @property
     def current_option(self) -> str | None:
         val = self._raw_value()
         return str(val) if val is not None else None

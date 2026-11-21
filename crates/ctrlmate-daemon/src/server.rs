@@ -8,9 +8,12 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
-use ctrlmate_hal::os_control::{execute_allowlisted_script, execute_power_action};
+use ctrlmate_hal::audio;
+use ctrlmate_hal::os_control::{
+    execute_allowlisted_script, execute_power_action, send_desktop_notification,
+};
 use ctrlmate_hal::smart_poll::{ActivityTier, SmartPoller};
-use ctrlmate_hal::HardwareCollector;
+use ctrlmate_hal::{updates, HardwareCollector};
 use ctrlmate_protocol::{
     AllowlistedScript, ControlCommand, CoolingPreset, DaemonSnapshot, DeviceManifest, EntityState,
     EntityValue, PairRequest, PairResponse, PairedClientInfo, PollingProfile, RemotePermissions,
@@ -37,7 +40,7 @@ pub struct AppState {
     pub latest_manifest: RwLock<DeviceManifest>,
     pub latest_states: RwLock<Vec<EntityState>>,
     pub connected_clients: RwLock<HashSet<String>>,
-    /// Broadcasts smart-filtered batches to connected Home Assistant WebSockets.
+    /// Broadcasts smart-filtered batches & manifest updates to connected Home Assistant WebSockets.
     pub ha_tx: broadcast::Sender<WireMessage>,
     /// Broadcasts 1 Hz live snapshots to the local desktop UI.
     pub ui_tx: broadcast::Sender<DaemonSnapshot>,
@@ -90,8 +93,117 @@ impl AppState {
         }
     }
 
+    /// Rebuilds the DeviceManifest (e.g. audio devices plugged in or allowlisted scripts edited)
+    /// and pushes the updated manifest live to all connected Home Assistant instances.
+    pub async fn refresh_manifest(&self) {
+        let scripts = self.config.read().await.scripts.clone();
+        let manifest = {
+            let mut col = self.collector.lock().await;
+            col.build_manifest(&scripts)
+        };
+        *self.latest_manifest.write().await = manifest.clone();
+        let _ = self.ha_tx.send(WireMessage::Manifest(manifest));
+        let _ = self.ui_tx.send(self.snapshot().await);
+    }
+
+    /// Spawns a non-blocking background OS update scan (WUA / PackageKit) and pushes results.
+    pub fn spawn_update_scan(self: &Arc<Self>) {
+        let state = Arc::clone(self);
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(updates::check_os_updates).await;
+            if let Ok(upd) = result {
+                let now = chrono::Utc::now();
+                let reboot = upd.reboot_required;
+                {
+                    let mut col = state.collector.lock().await;
+                    col.set_os_updates(upd.clone());
+                }
+                state
+                    .merge_and_broadcast_states(vec![
+                        EntityState {
+                            id: "os_updates".into(),
+                            value: EntityValue::Update(upd),
+                            attributes: Default::default(),
+                            updated_at: now,
+                        },
+                        EntityState {
+                            id: "reboot_required".into(),
+                            value: EntityValue::Bool(reboot),
+                            attributes: Default::default(),
+                            updated_at: now,
+                        },
+                    ])
+                    .await;
+            }
+        });
+    }
+
+    /// Spawns a non-blocking OS update download & installation worker.
+    pub fn spawn_update_install(self: &Arc<Self>) {
+        let state = Arc::clone(self);
+        tokio::spawn(async move {
+            let now = chrono::Utc::now();
+            let in_prog = {
+                let mut col = state.collector.lock().await;
+                col.set_os_updates_in_progress(true);
+                col.os_updates().clone()
+            };
+            state
+                .merge_and_broadcast_states(vec![EntityState {
+                    id: "os_updates".into(),
+                    value: EntityValue::Update(in_prog),
+                    attributes: Default::default(),
+                    updated_at: now,
+                }])
+                .await;
+
+            match tokio::task::spawn_blocking(updates::install_os_updates).await {
+                Ok(Ok(final_state)) => {
+                    let reboot = final_state.reboot_required;
+                    {
+                        let mut col = state.collector.lock().await;
+                        col.set_os_updates(final_state.clone());
+                    }
+                    state
+                        .merge_and_broadcast_states(vec![
+                            EntityState {
+                                id: "os_updates".into(),
+                                value: EntityValue::Update(final_state),
+                                attributes: Default::default(),
+                                updated_at: chrono::Utc::now(),
+                            },
+                            EntityState {
+                                id: "reboot_required".into(),
+                                value: EntityValue::Bool(reboot),
+                                attributes: Default::default(),
+                                updated_at: chrono::Utc::now(),
+                            },
+                        ])
+                        .await;
+                }
+                Ok(Err(err)) => {
+                    warn!("OS update install error: {err}");
+                    let reverted = {
+                        let mut col = state.collector.lock().await;
+                        col.set_os_updates_in_progress(false);
+                        col.os_updates().clone()
+                    };
+                    state
+                        .merge_and_broadcast_states(vec![EntityState {
+                            id: "os_updates".into(),
+                            value: EntityValue::Update(reverted),
+                            attributes: Default::default(),
+                            updated_at: chrono::Utc::now(),
+                        }])
+                        .await;
+                }
+                Err(err) => warn!("OS update install task panicked: {err}"),
+            }
+        });
+    }
+
     pub async fn execute_command(
-        &self,
+        self: &Arc<Self>,
         cmd: ControlCommand,
         from_remote: bool,
     ) -> Result<String, String> {
@@ -137,7 +249,10 @@ impl AppState {
                 self.merge_and_broadcast_states(batch).await;
                 Ok("Lighting updated".into())
             }
-            ControlCommand::SetCoolingPreset { entity_id: _, preset } => {
+            ControlCommand::SetCoolingPreset {
+                entity_id: _,
+                preset,
+            } => {
                 if from_remote && !perms.cooling {
                     return Err("Cooling control is disabled in Ctrlmate permissions.".into());
                 }
@@ -168,18 +283,16 @@ impl AppState {
                     if from_remote && !perms.audio_and_media {
                         return Err("Audio control is disabled in Ctrlmate permissions.".into());
                     }
-                    {
-                        let mut col = self.collector.lock().await;
-                        col.set_audio_state(None, None, Some(option.clone()));
-                    }
+                    let switched = audio::set_default_output_by_name(&option)
+                        .map_err(|e| e.to_string())?;
                     self.merge_and_broadcast_states(vec![EntityState {
                         id: "audio_output".into(),
-                        value: EntityValue::Text(option.clone()),
+                        value: EntityValue::Text(switched.clone()),
                         attributes: Default::default(),
                         updated_at: now,
                     }])
                     .await;
-                    return Ok(format!("Audio output switched to {option}"));
+                    return Ok(format!("Audio output switched to {switched}"));
                 }
                 Err(format!("Unsupported select entity: {entity_id}"))
             }
@@ -188,19 +301,15 @@ impl AppState {
                     if from_remote && !perms.audio_and_media {
                         return Err("Audio control is disabled in Ctrlmate permissions.".into());
                     }
-                    let clamped = value.clamp(0.0, 100.0);
-                    {
-                        let mut col = self.collector.lock().await;
-                        col.set_audio_state(Some(clamped), None, None);
-                    }
+                    let applied = audio::set_volume(value).map_err(|e| e.to_string())?;
                     self.merge_and_broadcast_states(vec![EntityState {
                         id: "master_volume".into(),
-                        value: EntityValue::Float(clamped),
+                        value: EntityValue::Float(applied),
                         attributes: Default::default(),
                         updated_at: now,
                     }])
                     .await;
-                    return Ok(format!("Master volume set to {clamped:.0}%"));
+                    return Ok(format!("Master volume set to {applied:.0}%"));
                 }
                 Err(format!("Unsupported number entity: {entity_id}"))
             }
@@ -209,22 +318,27 @@ impl AppState {
                     if from_remote && !perms.audio_and_media {
                         return Err("Audio control is disabled in Ctrlmate permissions.".into());
                     }
-                    {
-                        let mut col = self.collector.lock().await;
-                        col.set_audio_state(None, Some(state), None);
-                    }
+                    let applied = audio::set_mute(state).map_err(|e| e.to_string())?;
                     self.merge_and_broadcast_states(vec![EntityState {
                         id: "audio_mute".into(),
-                        value: EntityValue::Bool(state),
+                        value: EntityValue::Bool(applied),
                         attributes: Default::default(),
                         updated_at: now,
                     }])
                     .await;
-                    return Ok(format!("Audio mute set to {state}"));
+                    return Ok(format!("Audio mute set to {applied}"));
                 }
                 Err(format!("Unsupported switch entity: {entity_id}"))
             }
             ControlCommand::PressButton { entity_id } => {
+                if entity_id == "check_os_updates" {
+                    if from_remote && !perms.os_updates {
+                        return Err("OS Updates control is disabled in Ctrlmate permissions.".into());
+                    }
+                    self.spawn_update_scan();
+                    return Ok("OS update scan started".into());
+                }
+
                 if entity_id.starts_with("power_") || entity_id == "display_off" {
                     if from_remote && !perms.power_control {
                         return Err("Power control is disabled in Ctrlmate permissions.".into());
@@ -246,18 +360,25 @@ impl AppState {
 
                 Err(format!("Unknown button entity: {entity_id}"))
             }
-            ControlCommand::CheckOsUpdates | ControlCommand::InstallOsUpdates => {
+            ControlCommand::CheckOsUpdates => {
                 if from_remote && !perms.os_updates {
                     return Err("OS Updates control is disabled in Ctrlmate permissions.".into());
                 }
-                Ok("OS Update scan scheduled (Phase 2 WUA/PackageKit worker)".into())
+                self.spawn_update_scan();
+                Ok("OS update scan started".into())
+            }
+            ControlCommand::InstallOsUpdates => {
+                if from_remote && !perms.os_updates {
+                    return Err("OS Updates control is disabled in Ctrlmate permissions.".into());
+                }
+                self.spawn_update_install();
+                Ok("OS update installation started in background".into())
             }
             ControlCommand::SendNotification { title, message } => {
                 if from_remote && !perms.notifications {
                     return Err("Desktop notifications are disabled in Ctrlmate permissions.".into());
                 }
-                info!("Desktop notification received: [{title}] {message}");
-                Ok("Notification delivered".into())
+                send_desktop_notification(&title, &message).map_err(|e| e.to_string())
             }
         }
     }
@@ -280,10 +401,15 @@ impl AppState {
 
     /// Periodic 1 Hz hardware poll updating local UI and smart-filtering updates toward HA.
     pub async fn tick_poll(&self) {
-        let states = {
+        let (states, audio_outputs_changed, gaming_mode) = {
             let mut col = self.collector.lock().await;
-            col.poll_states()
+            let (st, changed) = col.poll_states();
+            (st, changed, col.is_gaming_mode())
         };
+
+        if audio_outputs_changed {
+            self.refresh_manifest().await;
+        }
 
         {
             let mut latest = self.latest_states.write().await;
@@ -298,12 +424,21 @@ impl AppState {
 
         // Smart-filter telemetry toward Home Assistant to keep Recorder lean.
         if self.ha_tx.receiver_count() > 0 {
+            let tier = if gaming_mode {
+                ActivityTier::Gaming
+            } else {
+                ActivityTier::Active
+            };
             let filtered = {
                 let mut poller = self.poller.lock().await;
-                poller.filter_batch(&states, ActivityTier::Active, Instant::now())
+                poller.filter_batch(&states, tier, Instant::now())
             };
             if !filtered.is_empty() {
-                debug!("Pushing {} delta-filtered entity updates to HA", filtered.len());
+                debug!(
+                    "Pushing {} delta-filtered entity updates to HA (tier={:?})",
+                    filtered.len(),
+                    tier
+                );
                 let _ = self.ha_tx.send(WireMessage::StateBatch { states: filtered });
             }
         }
@@ -389,7 +524,10 @@ async fn ha_pair(
     };
 
     let manifest = state.latest_manifest.read().await;
-    info!("Paired new Home Assistant client '{}' ({})", stored.client_name, stored.client_id);
+    info!(
+        "Paired new Home Assistant client '{}' ({})",
+        stored.client_name, stored.client_id
+    );
 
     let resp = PairResponse {
         client_id: stored.client_id,
@@ -416,7 +554,6 @@ async fn ha_ws_upgrade(
 async fn handle_ha_ws(socket: WebSocket, state: Arc<AppState>) {
     let (mut sink, mut stream) = socket.split();
 
-    // 1. Send Hello banner
     let hello = {
         let manifest = state.latest_manifest.read().await;
         WireMessage::Hello {
@@ -431,7 +568,6 @@ async fn handle_ha_ws(socket: WebSocket, state: Arc<AppState>) {
         return;
     }
 
-    // 2. Expect Auth frame within 10s
     let auth_frame = tokio::time::timeout(std::time::Duration::from_secs(10), stream.next()).await;
     let client_id = match auth_frame {
         Ok(Some(Ok(Message::Text(txt)))) => match serde_json::from_str::<WireMessage>(&txt) {
@@ -477,11 +613,9 @@ async fn handle_ha_ws(socket: WebSocket, state: Arc<AppState>) {
         return;
     }
 
-    // Track active HA client
     state.connected_clients.write().await.insert(client_id.clone());
     let _ = state.ui_tx.send(state.snapshot().await);
 
-    // 3. Push full Manifest + initial full StateBatch immediately
     let manifest = state.latest_manifest.read().await.clone();
     let initial_states = state.latest_states.read().await.clone();
     if send_wire(&mut sink, &WireMessage::Manifest(manifest))
@@ -606,7 +740,10 @@ async fn ipc_start_pairing(State(state): State<Arc<AppState>>) -> Json<DaemonSna
     {
         let mut pm = state.pairing.lock().await;
         let sess = pm.start();
-        info!("Started 6-digit HA pairing session (expires at {})", sess.expires_at);
+        info!(
+            "Started 6-digit HA pairing session (expires at {})",
+            sess.expires_at
+        );
     }
     let snap = state.snapshot().await;
     let _ = state.ui_tx.send(snap.clone());
@@ -649,7 +786,10 @@ async fn ipc_command(
 ) -> Json<IpcCommandResponse> {
     match state.execute_command(cmd, false).await {
         Ok(msg) => Json(IpcCommandResponse { ok: true, message: msg }),
-        Err(err) => Json(IpcCommandResponse { ok: false, message: err }),
+        Err(err) => Json(IpcCommandResponse {
+            ok: false,
+            message: err,
+        }),
     }
 }
 
@@ -666,6 +806,7 @@ async fn ipc_update_settings(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpdateSettingsRequest>,
 ) -> Json<DaemonSnapshot> {
+    let mut manifest_dirty = false;
     {
         let mut cfg = state.config.write().await;
         if let Some(p) = req.permissions {
@@ -681,11 +822,17 @@ async fn ipc_update_settings(
         if let Some(mode) = req.security_mode {
             cfg.security_mode = mode;
             state.collector.lock().await.set_security_mode(mode);
+            manifest_dirty = true;
         }
         if let Some(scripts) = req.scripts {
             cfg.scripts = scripts;
+            manifest_dirty = true;
         }
         let _ = cfg.save(&state.data_dir);
+    }
+
+    if manifest_dirty {
+        state.refresh_manifest().await;
     }
 
     let snap = state.snapshot().await;

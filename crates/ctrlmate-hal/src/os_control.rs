@@ -228,3 +228,51 @@ pub fn execute_allowlisted_script(script: &AllowlistedScript) -> Result<String> 
         .with_context(|| format!("failed to spawn allowlisted script '{}'", script.name))?;
     Ok(format!("Launched script '{}'", script.name))
 }
+
+/// Delivers a native OS desktop notification (Windows 11 Toast / Linux FreeDesktop).
+pub fn send_desktop_notification(title: &str, message: &str) -> Result<String> {
+    info!("Delivering native desktop notification: [{title}] {message}");
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        // Pass title & message via environment variables (zero PowerShell injection risk).
+        let ps_script = r#"
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+$esc = { param($s) [System.Security.SecurityElement]::Escape($s) }
+$t = & $esc $env:CTRLMATE_TOAST_TITLE
+$m = & $esc $env:CTRLMATE_TOAST_BODY
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml("<toast><visual><binding template='ToastGeneric'><text>$t</text><text>$m</text></binding></visual></toast>")
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+"#;
+
+        Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps_script])
+            .env("CTRLMATE_TOAST_TITLE", title)
+            .env("CTRLMATE_TOAST_BODY", message)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .context("failed spawning Windows Toast notification")?;
+        Ok("Windows notification delivered".into())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("notify-send")
+            .args(["--app-name=Ctrlmate", title, message])
+            .spawn()
+            .context("failed spawning notify-send")?;
+        Ok("Linux notification delivered".into())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Ok("Notification logged".into())
+    }
+}
