@@ -124,6 +124,18 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Background 60 FPS smooth lighting transition dispatcher (idle-friendly)
+    let rgb_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(16));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let mut col = rgb_state.collector.lock().await;
+            col.tick_lighting_transitions();
+        }
+    });
+
     // Background OS Update checker (initial scan 15s after start, then every 6 hours)
     let update_state = Arc::clone(&state);
     tokio::spawn(async move {

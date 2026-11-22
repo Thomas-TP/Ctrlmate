@@ -112,4 +112,30 @@ impl GpuProvider {
 
         samples
     }
+
+    /// Applies a GPU fan duty percentage via NVML (drivers 520+), or restores automatic firmware fan curves.
+    pub fn apply_fan_target(&self, fan_percent: Option<u8>) {
+        let Some(nvml) = &self.nvml else {
+            return;
+        };
+        for desc in &self.descriptors {
+            if let Ok(mut dev) = nvml.device_by_index(desc.index) {
+                let fan_count = dev.num_fans().unwrap_or(1);
+                for fan_idx in 0..fan_count {
+                    match fan_percent {
+                        Some(pct) => {
+                            if let Err(err) = dev.set_fan_speed(fan_idx, u32::from(pct.clamp(30, 100))) {
+                                debug!("NVML set_fan_speed GPU #{} fan #{fan_idx}: {err}", desc.index);
+                            }
+                        }
+                        None => {
+                            if let Err(err) = dev.set_default_fan_speed(fan_idx) {
+                                debug!("NVML set_default_fan_speed GPU #{} fan #{fan_idx}: {err}", desc.index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

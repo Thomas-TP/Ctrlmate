@@ -53,12 +53,14 @@ impl AppState {
         let cfg = self.config.read().await.clone();
         let connected = self.connected_clients.read().await.clone();
 
-        let (conflicts, hid_devices, failsafe) = {
+        let (conflicts, hid_devices, failsafe, rgb_backends, deep_bridge_active) = {
             let col = self.collector.lock().await;
             (
                 col.detect_conflicts(),
                 col.hid_devices().to_vec(),
                 col.is_thermal_failsafe_active(),
+                col.rgb_backend_names(),
+                col.deep_bridge_active(),
             )
         };
 
@@ -90,6 +92,8 @@ impl AppState {
             temperature_unit: cfg.temperature_unit,
             scripts: cfg.scripts,
             thermal_failsafe_active: failsafe,
+            rgb_backends,
+            deep_bridge_active,
         }
     }
 
@@ -464,6 +468,7 @@ pub fn build_ipc_router(state: Arc<AppState>) -> Router {
         .route("/ipc/clients/{client_id}", delete(ipc_revoke_client))
         .route("/ipc/command", post(ipc_command))
         .route("/ipc/settings", put(ipc_update_settings))
+        .route("/ipc/hardware/rescan", post(ipc_rescan_hardware))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -838,4 +843,13 @@ async fn ipc_update_settings(
     let snap = state.snapshot().await;
     let _ = state.ui_tx.send(snap.clone());
     Json(snap)
+}
+
+async fn ipc_rescan_hardware(State(state): State<Arc<AppState>>) -> Json<DaemonSnapshot> {
+    {
+        let mut col = state.collector.lock().await;
+        col.rescan_hardware();
+    }
+    state.refresh_manifest().await;
+    Json(state.snapshot().await)
 }

@@ -4,6 +4,8 @@
 //! with smooth 60 FPS transitions and LED gamma calibration so PC LEDs match
 //! Philips Hue and Govee ambient lighting seamlessly.
 
+pub mod backends;
+
 use ctrlmate_protocol::{
     LightColorMode, LightState, MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN, RgbColor,
 };

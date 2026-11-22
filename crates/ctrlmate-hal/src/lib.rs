@@ -5,6 +5,8 @@ pub mod audio;
 pub mod conflicts;
 pub mod gpu;
 pub mod hid;
+pub mod kraken;
+pub mod lhm_bridge;
 pub mod os_control;
 pub mod smart_poll;
 pub mod storage;
@@ -12,16 +14,18 @@ pub mod system;
 pub mod updates;
 
 use chrono::Utc;
-use ctrlmate_cooling::{CoolingWatchdog, ThermalReadings, ThermalSafetyConfig};
+use ctrlmate_cooling::{CoolingTargets, CoolingWatchdog, ThermalReadings, ThermalSafetyConfig};
 use ctrlmate_protocol::{
     AllowlistedScript, ChildDeviceInfo, CoolingPreset, DetectedHidDevice, DeviceCategory,
     DeviceManifest, EntityCategory, EntityDescriptor, EntityPlatform, EntityState, EntityValue,
     LightCapabilities, LightState, NumberRange, OsUpdateState, SecurityMode, SoftwareConflict,
     StateClass, PROTOCOL_VERSION,
 };
+use ctrlmate_rgb::backends::RgbHardwareDispatcher;
 use ctrlmate_rgb::LightingEngine;
 use std::collections::BTreeMap;
-use tracing::{debug, info};
+use std::time::Instant;
+use tracing::{debug, info, warn};
 
 /// Central hardware & telemetry state collector running inside `ctrlmated`.
 pub struct HardwareCollector {
@@ -30,9 +34,13 @@ pub struct HardwareCollector {
     security_mode: SecurityMode,
     system: system::SystemProvider,
     gpu: gpu::GpuProvider,
+    kraken: Option<kraken::KrakenDriver>,
+    lhm_bridge: lhm_bridge::LhmBridgeManager,
+    rgb_hw: RgbHardwareDispatcher,
     hid_devices: Vec<DetectedHidDevice>,
     lighting: LightingEngine,
     cooling: CoolingWatchdog,
+    last_cooling_targets: Option<CoolingTargets>,
     os_updates: OsUpdateState,
     audio_outputs: Vec<String>,
     last_gaming_mode: bool,
@@ -43,32 +51,34 @@ impl HardwareCollector {
         let system = system::SystemProvider::new();
         let gpu = gpu::GpuProvider::new();
         let hid_devices = hid::scan_known_hid_devices();
-        let mut lighting = LightingEngine::new();
+        let kraken = kraken::KrakenDriver::probe();
+        let rgb_hw = RgbHardwareDispatcher::discover();
+        let mut lhm_bridge = lhm_bridge::LhmBridgeManager::new();
 
-        // Register logical lighting zones discovered on this system.
-        lighting.register_zone("light_global", LightState::default());
-        for dev in &hid_devices {
-            match dev.vendor_id {
-                0x048D => lighting.register_zone("light_motherboard", LightState::default()),
-                0x1E71 => lighting.register_zone("light_cooler", LightState::default()),
-                0x0B05 => lighting.register_zone("light_gpu", LightState::default()),
-                0x1B1C | 0x0CF2 => lighting.register_zone("light_fans", LightState::default()),
-                _ => {}
+        if security_mode == SecurityMode::DeepHardwarePawnIo {
+            let conflicts = conflicts::detect_running_conflicts(system.sys());
+            let faceit_active = conflicts.iter().any(|c| c.id == "faceit_ac");
+            if faceit_active {
+                warn!("FACEIT Anti-Cheat detected — auto-pausing Deep Hardware (PawnIO) bridge");
+            } else {
+                lhm_bridge.start();
             }
         }
 
+        let mut lighting = LightingEngine::new();
+        Self::register_lighting_zones(&mut lighting, &hid_devices, &rgb_hw);
+
         let audio_snap = audio::poll_audio();
-        let audio_outputs: Vec<String> = audio_snap
-            .outputs
-            .into_iter()
-            .map(|d| d.name)
-            .collect();
+        let audio_outputs: Vec<String> = audio_snap.outputs.into_iter().map(|d| d.name).collect();
 
         info!(
-            "HardwareCollector initialized (GPU count: {}, known USB HID controllers: {}, audio outputs: {})",
+            "HardwareCollector initialized (GPU: {}, Kraken AIO: {}, USB HID: {}, RGB backends: {}, Audio: {}, DeepBridge: {})",
             gpu.device_count(),
+            kraken.is_some(),
             hid_devices.len(),
-            audio_outputs.len()
+            rgb_hw.active_backend_names().len(),
+            audio_outputs.len(),
+            lhm_bridge.is_running()
         );
 
         Self {
@@ -77,9 +87,13 @@ impl HardwareCollector {
             security_mode,
             system,
             gpu,
+            kraken,
+            lhm_bridge,
+            rgb_hw,
             hid_devices,
             lighting,
             cooling: CoolingWatchdog::new(ThermalSafetyConfig::default()),
+            last_cooling_targets: None,
             os_updates: OsUpdateState {
                 installed_version: system::os_version_string(),
                 latest_version: system::os_version_string(),
@@ -94,24 +108,89 @@ impl HardwareCollector {
         }
     }
 
+    fn register_lighting_zones(
+        lighting: &mut LightingEngine,
+        hid_devices: &[DetectedHidDevice],
+        rgb_hw: &RgbHardwareDispatcher,
+    ) {
+        lighting.register_zone("light_global", LightState::default());
+        for dev in hid_devices {
+            match dev.vendor_id {
+                0x048D => lighting.register_zone("light_motherboard", LightState::default()),
+                0x1E71 => lighting.register_zone("light_cooler", LightState::default()),
+                0x0B05 => lighting.register_zone("light_gpu", LightState::default()),
+                0x1B1C | 0x0CF2 => lighting.register_zone("light_fans", LightState::default()),
+                _ => {}
+            }
+        }
+        if rgb_hw.has_openrgb_ram() {
+            lighting.register_zone("light_ram", LightState::default());
+        }
+    }
+
+    /// Re-probes USB HID controllers (Kraken, Gigabyte IT5702, NZXT RGB) and OpenRGB SDK.
+    /// Useful immediately after closing conflicting vendor apps (GCC / NZXT CAM / Armoury Crate).
+    pub fn rescan_hardware(&mut self) {
+        self.hid_devices = hid::scan_known_hid_devices();
+        self.kraken = kraken::KrakenDriver::probe();
+        self.rgb_hw = RgbHardwareDispatcher::discover();
+        Self::register_lighting_zones(&mut self.lighting, &self.hid_devices, &self.rgb_hw);
+        self.last_cooling_targets = None;
+        info!(
+            "Hardware rescanned (Kraken: {}, RGB backends: {:?})",
+            self.kraken.is_some(),
+            self.rgb_hw.active_backend_names()
+        );
+    }
+
     pub fn security_mode(&self) -> SecurityMode {
         self.security_mode
     }
 
     pub fn set_security_mode(&mut self, mode: SecurityMode) {
         self.security_mode = mode;
+        match mode {
+            SecurityMode::ZeroKernelSafe => {
+                self.lhm_bridge.stop();
+            }
+            SecurityMode::DeepHardwarePawnIo => {
+                let faceit_active = self.detect_conflicts().iter().any(|c| c.id == "faceit_ac");
+                if faceit_active {
+                    warn!("Cannot start PawnIO bridge while FACEIT Anti-Cheat is running");
+                    self.lhm_bridge.stop();
+                } else {
+                    self.lhm_bridge.start();
+                }
+            }
+        }
+    }
+
+    pub fn deep_bridge_active(&self) -> bool {
+        self.lhm_bridge.is_running()
+    }
+
+    pub fn rgb_backend_names(&self) -> Vec<String> {
+        self.rgb_hw.active_backend_names()
     }
 
     pub fn hid_devices(&self) -> &[DetectedHidDevice] {
         &self.hid_devices
     }
 
-    pub fn rescan_hid(&mut self) {
-        self.hid_devices = hid::scan_known_hid_devices();
-    }
-
     pub fn lighting_mut(&mut self) -> &mut LightingEngine {
         &mut self.lighting
+    }
+
+    /// Advances smooth 60 FPS RGB transitions and writes frames to physical LED hardware.
+    pub fn tick_lighting_transitions(&mut self) -> bool {
+        let frames = self.lighting.tick_transitions(Instant::now());
+        if frames.is_empty() {
+            return false;
+        }
+        for (zone_id, color) in frames {
+            self.rgb_hw.push_zone_frame(&zone_id, color);
+        }
+        true
     }
 
     pub fn cooling_mut(&mut self) -> &mut CoolingWatchdog {
@@ -155,8 +234,9 @@ impl HardwareCollector {
 
         let mut child_devices = Vec::new();
         let mut entities = Vec::new();
+        let deep = self.lhm_bridge.latest();
 
-        // --- Parent PC Entities (Power, OS Updates, Audio, Privacy, Activity, Global Lighting & Cooling, Scripts) ---
+        // --- Parent PC Entities ---
         entities.extend(self.parent_system_entities(scripts));
 
         // --- Child Device: CPU ---
@@ -187,16 +267,28 @@ impl HardwareCollector {
             Some("mdi:sine-wave"),
             Some(0),
         ));
-        #[cfg(target_os = "linux")]
-        entities.push(sensor_desc(
-            "cpu_0_temperature".into(),
-            "Temperature",
-            Some("cpu_0".into()),
-            Some("temperature"),
-            Some("°C"),
-            None,
-            Some(1),
-        ));
+        if cfg!(target_os = "linux") || self.lhm_bridge.is_running() || deep.cpu_temp_c.is_some() {
+            entities.push(sensor_desc(
+                "cpu_0_temperature".into(),
+                "Temperature",
+                Some("cpu_0".into()),
+                Some("temperature"),
+                Some("°C"),
+                None,
+                Some(1),
+            ));
+        }
+        if self.lhm_bridge.is_running() || deep.cpu_power_w.is_some() {
+            entities.push(sensor_desc(
+                "cpu_0_power".into(),
+                "Power",
+                Some("cpu_0".into()),
+                Some("power"),
+                Some("W"),
+                None,
+                Some(1),
+            ));
+        }
 
         // --- Child Device: Memory (RAM) ---
         let ram_total_gb = (self.system.total_memory_bytes() as f64 / 1_073_741_824.0).round();
@@ -226,6 +318,25 @@ impl HardwareCollector {
             Some("mdi:memory"),
             Some(2),
         ));
+        if deep.ram_temp_c.is_some() {
+            entities.push(sensor_desc(
+                "memory_0_temperature".into(),
+                "Temperature",
+                Some("memory_0".into()),
+                Some("temperature"),
+                Some("°C"),
+                None,
+                Some(1),
+            ));
+        }
+        if self.lighting.zone_state("light_ram").is_some() {
+            entities.push(light_desc(
+                "light_ram",
+                "Lighting",
+                Some("memory_0".into()),
+                false,
+            ));
+        }
 
         // --- Child Devices: GPUs (NVIDIA NVML / Linux DRM) ---
         for gpu_info in self.gpu.descriptors() {
@@ -328,39 +439,143 @@ impl HardwareCollector {
             }
         }
 
-        // --- Child Devices: Lighting & Cooler Zones detected via USB HID ---
-        if self.lighting.zone_state("light_motherboard").is_some() {
+        // --- Child Device: Motherboard (RGB + optional Deep Sensors) ---
+        if self.lighting.zone_state("light_motherboard").is_some()
+            || deep.motherboard_name.is_some()
+        {
             child_devices.push(ChildDeviceInfo {
                 id: "motherboard_0".into(),
-                name: "Motherboard".into(),
+                name: deep
+                    .motherboard_name
+                    .clone()
+                    .unwrap_or_else(|| "Motherboard".into()),
                 category: DeviceCategory::Motherboard,
                 manufacturer: Some("Gigabyte / ITE".into()),
-                model: Some("Motherboard RGB Controller".into()),
+                model: deep
+                    .motherboard_name
+                    .clone()
+                    .or_else(|| Some("Motherboard Controller".into())),
                 hw_version: None,
             });
-            entities.push(light_desc(
-                "light_motherboard",
-                "Lighting",
-                Some("motherboard_0".into()),
-                false,
-            ));
+            if self.lighting.zone_state("light_motherboard").is_some() {
+                entities.push(light_desc(
+                    "light_motherboard",
+                    "Lighting",
+                    Some("motherboard_0".into()),
+                    false,
+                ));
+            }
+            if deep.motherboard_vrm_temp_c.is_some() {
+                entities.push(sensor_desc(
+                    "motherboard_0_vrm_temperature".into(),
+                    "VRM Temperature",
+                    Some("motherboard_0".into()),
+                    Some("temperature"),
+                    Some("°C"),
+                    None,
+                    Some(1),
+                ));
+            }
+            if deep.motherboard_chipset_temp_c.is_some() {
+                entities.push(sensor_desc(
+                    "motherboard_0_chipset_temperature".into(),
+                    "Chipset Temperature",
+                    Some("motherboard_0".into()),
+                    Some("temperature"),
+                    Some("°C"),
+                    None,
+                    Some(1),
+                ));
+            }
+            for fan in &deep.case_fans {
+                entities.push(sensor_desc(
+                    format!("motherboard_0_{}", fan.id),
+                    &fan.name,
+                    Some("motherboard_0".into()),
+                    None,
+                    Some("RPM"),
+                    Some("mdi:fan"),
+                    Some(0),
+                ));
+            }
         }
-        if self.lighting.zone_state("light_cooler").is_some() {
+
+        // --- Child Device: Watercooling AIO (NZXT Kraken USB HID + RGB) ---
+        if self.kraken.is_some() || self.lighting.zone_state("light_cooler").is_some() {
+            let model_name = self
+                .kraken
+                .as_ref()
+                .map(|k| k.model_name().to_string())
+                .unwrap_or_else(|| "Watercooling AIO".into());
             child_devices.push(ChildDeviceInfo {
                 id: "cooler_0".into(),
-                name: "Watercooling AIO".into(),
+                name: model_name.clone(),
                 category: DeviceCategory::Cooler,
                 manufacturer: Some("NZXT".into()),
-                model: Some("Kraken AIO".into()),
+                model: Some(model_name),
                 hw_version: None,
             });
-            entities.push(light_desc(
-                "light_cooler",
-                "Lighting",
-                Some("cooler_0".into()),
-                false,
-            ));
+
+            if let Some(k) = &self.kraken {
+                entities.push(sensor_desc(
+                    "cooler_0_liquid_temperature".into(),
+                    "Liquid Temperature",
+                    Some("cooler_0".into()),
+                    Some("temperature"),
+                    Some("°C"),
+                    Some("mdi:coolant-temperature"),
+                    Some(1),
+                ));
+                entities.push(sensor_desc(
+                    "cooler_0_pump_rpm".into(),
+                    "Pump Speed",
+                    Some("cooler_0".into()),
+                    None,
+                    Some("RPM"),
+                    Some("mdi:pump"),
+                    Some(0),
+                ));
+                entities.push(sensor_desc(
+                    "cooler_0_pump_duty".into(),
+                    "Pump Duty",
+                    Some("cooler_0".into()),
+                    None,
+                    Some("%"),
+                    Some("mdi:pump"),
+                    Some(0),
+                ));
+                if k.has_fan_channel() {
+                    entities.push(sensor_desc(
+                        "cooler_0_fan_rpm".into(),
+                        "Radiator Fans",
+                        Some("cooler_0".into()),
+                        None,
+                        Some("RPM"),
+                        Some("mdi:fan"),
+                        Some(0),
+                    ));
+                    entities.push(sensor_desc(
+                        "cooler_0_fan_duty".into(),
+                        "Radiator Fan Duty",
+                        Some("cooler_0".into()),
+                        None,
+                        Some("%"),
+                        Some("mdi:fan"),
+                        Some(0),
+                    ));
+                }
+            }
+
+            if self.lighting.zone_state("light_cooler").is_some() {
+                entities.push(light_desc(
+                    "light_cooler",
+                    "Lighting",
+                    Some("cooler_0".into()),
+                    false,
+                ));
+            }
         }
+
         if self.lighting.zone_state("light_gpu").is_some() {
             let gpu_child = child_devices
                 .iter()
@@ -584,14 +799,27 @@ impl HardwareCollector {
         ents
     }
 
-    /// Samples all hardware & OS providers and produces the current entity state list.
-    /// Returns `(states, audio_outputs_changed)`.
+    /// Samples all hardware & OS providers, applies cooling targets, and produces entity states.
+    /// Returns `(states, manifest_dirty)`.
     pub fn poll_states(&mut self) -> (Vec<EntityState>, bool) {
         let now = Utc::now();
         self.system.refresh();
         let mut states = Vec::new();
         let mut thermal = ThermalReadings::default();
         let mut primary_gpu_load: Option<u32> = None;
+
+        // Auto-Pause PawnIO bridge if FACEIT Anti-Cheat starts while in DeepHardwarePawnIo mode
+        if self.lhm_bridge.is_running()
+            && self
+                .detect_conflicts()
+                .iter()
+                .any(|c| c.id == "faceit_ac")
+        {
+            warn!("FACEIT Anti-Cheat launched — auto-pausing Deep Hardware (PawnIO) bridge");
+            self.lhm_bridge.stop();
+        }
+
+        let deep = self.lhm_bridge.latest();
 
         // CPU
         let cpu_load = f64::from(self.system.global_cpu_usage());
@@ -609,11 +837,23 @@ impl HardwareCollector {
         });
 
         #[cfg(target_os = "linux")]
-        if let Some(cpu_temp) = system::read_linux_cpu_temp_c() {
+        let native_cpu_temp = system::read_linux_cpu_temp_c();
+        #[cfg(not(target_os = "linux"))]
+        let native_cpu_temp: Option<f64> = None;
+
+        if let Some(cpu_temp) = native_cpu_temp.or(deep.cpu_temp_c) {
             thermal.cpu_c = Some(cpu_temp);
             states.push(EntityState {
                 id: "cpu_0_temperature".into(),
                 value: EntityValue::Float(round1(cpu_temp)),
+                attributes: BTreeMap::new(),
+                updated_at: now,
+            });
+        }
+        if let Some(cpu_w) = deep.cpu_power_w {
+            states.push(EntityState {
+                id: "cpu_0_power".into(),
+                value: EntityValue::Float(round1(cpu_w)),
                 attributes: BTreeMap::new(),
                 updated_at: now,
             });
@@ -634,6 +874,14 @@ impl HardwareCollector {
             attributes: BTreeMap::new(),
             updated_at: now,
         });
+        if let Some(ram_t) = deep.ram_temp_c {
+            states.push(EntityState {
+                id: "memory_0_temperature".into(),
+                value: EntityValue::Float(round1(ram_t)),
+                attributes: BTreeMap::new(),
+                updated_at: now,
+            });
+        }
 
         // GPUs
         for sample in self.gpu.poll() {
@@ -715,7 +963,80 @@ impl HardwareCollector {
             }
         }
 
-        // Thermal watchdog evaluation
+        // Motherboard Deep Sensors (when PawnIO bridge is active)
+        if let Some(vrm) = deep.motherboard_vrm_temp_c {
+            states.push(EntityState {
+                id: "motherboard_0_vrm_temperature".into(),
+                value: EntityValue::Float(round1(vrm)),
+                attributes: BTreeMap::new(),
+                updated_at: now,
+            });
+        }
+        if let Some(chip) = deep.motherboard_chipset_temp_c {
+            states.push(EntityState {
+                id: "motherboard_0_chipset_temperature".into(),
+                value: EntityValue::Float(round1(chip)),
+                attributes: BTreeMap::new(),
+                updated_at: now,
+            });
+        }
+        for fan in &deep.case_fans {
+            states.push(EntityState {
+                id: format!("motherboard_0_{}", fan.id),
+                value: EntityValue::Int(fan.rpm.round() as i64),
+                attributes: BTreeMap::new(),
+                updated_at: now,
+            });
+        }
+
+        // NZXT Kraken AIO real USB HID telemetry
+        if let Some(k) = &self.kraken {
+            if let Ok(kst) = k.poll_status() {
+                if let Some(liq) = kst.liquid_temp_c {
+                    thermal.liquid_c = Some(liq);
+                    states.push(EntityState {
+                        id: "cooler_0_liquid_temperature".into(),
+                        value: EntityValue::Float(round1(liq)),
+                        attributes: BTreeMap::new(),
+                        updated_at: now,
+                    });
+                }
+                if let Some(rpm) = kst.pump_rpm {
+                    states.push(EntityState {
+                        id: "cooler_0_pump_rpm".into(),
+                        value: EntityValue::Int(i64::from(rpm)),
+                        attributes: BTreeMap::new(),
+                        updated_at: now,
+                    });
+                }
+                if let Some(duty) = kst.pump_duty_pct {
+                    states.push(EntityState {
+                        id: "cooler_0_pump_duty".into(),
+                        value: EntityValue::Int(i64::from(duty)),
+                        attributes: BTreeMap::new(),
+                        updated_at: now,
+                    });
+                }
+                if let Some(rpm) = kst.fan_rpm {
+                    states.push(EntityState {
+                        id: "cooler_0_fan_rpm".into(),
+                        value: EntityValue::Int(i64::from(rpm)),
+                        attributes: BTreeMap::new(),
+                        updated_at: now,
+                    });
+                }
+                if let Some(duty) = kst.fan_duty_pct {
+                    states.push(EntityState {
+                        id: "cooler_0_fan_duty".into(),
+                        value: EntityValue::Int(i64::from(duty)),
+                        attributes: BTreeMap::new(),
+                        updated_at: now,
+                    });
+                }
+            }
+        }
+
+        // Thermal watchdog evaluation + real hardware cooling dispatch
         let cooling_targets = self.cooling.evaluate(thermal);
         if cooling_targets.failsafe_triggered {
             debug!(
@@ -723,6 +1044,20 @@ impl HardwareCollector {
                 cooling_targets.effective_preset
             );
         }
+        if self.last_cooling_targets != Some(cooling_targets) {
+            if let Some(k) = &mut self.kraken {
+                if let Err(err) = k.apply_cooling(cooling_targets) {
+                    warn!("Kraken cooling apply error: {err:#}");
+                }
+            }
+            self.gpu.apply_fan_target(cooling_targets.gpu_fan_percent);
+            if self.lhm_bridge.is_running() {
+                self.lhm_bridge
+                    .set_case_fans_duty(cooling_targets.case_fan_percent);
+            }
+            self.last_cooling_targets = Some(cooling_targets);
+        }
+
         states.push(EntityState {
             id: "cooling_preset".into(),
             value: EntityValue::Text(cooling_targets.effective_preset.as_ha_option().into()),
@@ -751,12 +1086,21 @@ impl HardwareCollector {
         self.last_gaming_mode = app_info.gaming_mode;
         let mut app_attrs = BTreeMap::new();
         if !app_info.process_name.is_empty() {
-            app_attrs.insert("process_name".into(), serde_json::json!(app_info.process_name));
+            app_attrs.insert(
+                "process_name".into(),
+                serde_json::json!(app_info.process_name),
+            );
         }
         if !app_info.window_title.is_empty() {
-            app_attrs.insert("window_title".into(), serde_json::json!(app_info.window_title));
+            app_attrs.insert(
+                "window_title".into(),
+                serde_json::json!(app_info.window_title),
+            );
         }
-        app_attrs.insert("is_fullscreen".into(), serde_json::json!(app_info.is_fullscreen));
+        app_attrs.insert(
+            "is_fullscreen".into(),
+            serde_json::json!(app_info.is_fullscreen),
+        );
         states.push(EntityState {
             id: "active_application".into(),
             value: EntityValue::Text(app_info.app_name),
@@ -774,7 +1118,10 @@ impl HardwareCollector {
         let privacy = os_control::poll_privacy_sensors();
         let mut mic_attrs = BTreeMap::new();
         if !privacy.microphone_apps.is_empty() {
-            mic_attrs.insert("active_apps".into(), serde_json::json!(privacy.microphone_apps));
+            mic_attrs.insert(
+                "active_apps".into(),
+                serde_json::json!(privacy.microphone_apps),
+            );
         }
         states.push(EntityState {
             id: "microphone_in_use".into(),
@@ -837,6 +1184,14 @@ impl HardwareCollector {
         });
 
         (states, audio_outputs_changed)
+    }
+}
+
+impl Drop for HardwareCollector {
+    fn drop(&mut self) {
+        // Restore hardware/BIOS automatic fan curves on daemon shutdown
+        self.gpu.apply_fan_target(None);
+        self.lhm_bridge.stop();
     }
 }
 

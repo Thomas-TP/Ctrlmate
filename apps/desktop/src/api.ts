@@ -73,6 +73,12 @@ export async function pressButton(entity_id: string) {
   return sendCommand({ action: 'press_button', entity_id });
 }
 
+export async function rescanHardware(): Promise<DaemonSnapshot> {
+  const res = await fetch(`${ipcHttpBase()}/ipc/hardware/rescan`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Rescan HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function updateSettings(patch: {
   permissions?: RemotePermissions;
   polling_profile?: PollingProfile;

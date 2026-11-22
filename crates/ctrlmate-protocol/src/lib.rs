@@ -524,6 +524,10 @@ pub struct DaemonSnapshot {
     pub temperature_unit: TemperatureUnit,
     pub scripts: Vec<AllowlistedScript>,
     pub thermal_failsafe_active: bool,
+    #[serde(default)]
+    pub rgb_backends: Vec<String>,
+    #[serde(default)]
+    pub deep_bridge_active: bool,
 }
 
 #[cfg(test)]

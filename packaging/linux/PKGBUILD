@@ -1,6 +1,6 @@
 # Maintainer: Ctrlmate Contributors
 pkgname=ctrlmate
-pkgver=0.1.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Modern PC telemetry, lighting, cooling and system control daemon & desktop app for Home Assistant"
 arch=('x86_64' 'aarch64')

@@ -34,6 +34,7 @@ import {
   ipcWsUrl,
   kelvinToPreviewHex,
   pressButton,
+  rescanHardware,
   revokeClient,
   sendCommand,
   setCoolingPreset,
@@ -332,8 +333,12 @@ export default function App() {
                 <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <MetricCard
                     label="Processeur"
-                    value={`${(numVal('cpu_0_load') ?? 0).toFixed(1)} %`}
-                    sub={`${numVal('cpu_0_frequency') ?? 0} MHz`}
+                    value={
+                      numVal('cpu_0_temperature') !== undefined
+                        ? formatTemp(numVal('cpu_0_temperature'), unit)
+                        : `${(numVal('cpu_0_load') ?? 0).toFixed(1)} %`
+                    }
+                    sub={`Charge ${(numVal('cpu_0_load') ?? 0).toFixed(0)} % · ${numVal('cpu_0_frequency') ?? 0} MHz`}
                     progress={numVal('cpu_0_load') ?? 0}
                   />
                   <MetricCard
@@ -343,20 +348,36 @@ export default function App() {
                     progress={numVal('gpu_0_load') ?? 0}
                   />
                   <MetricCard
-                    label="Mémoire RAM"
-                    value={`${(numVal('memory_0_usage') ?? 0).toFixed(1)} %`}
-                    sub={`${(numVal('memory_0_used') ?? 0).toFixed(1)} GiB utilisés`}
-                    progress={numVal('memory_0_usage') ?? 0}
+                    label={
+                      numVal('cooler_0_liquid_temperature') !== undefined
+                        ? 'Watercooling AIO'
+                        : 'Mémoire RAM'
+                    }
+                    value={
+                      numVal('cooler_0_liquid_temperature') !== undefined
+                        ? formatTemp(numVal('cooler_0_liquid_temperature'), unit)
+                        : `${(numVal('memory_0_usage') ?? 0).toFixed(1)} %`
+                    }
+                    sub={
+                      numVal('cooler_0_liquid_temperature') !== undefined
+                        ? `Pompe ${numVal('cooler_0_pump_rpm') ?? 0} RPM · Fan ${numVal('cooler_0_fan_rpm') ?? 0} RPM`
+                        : `${(numVal('memory_0_used') ?? 0).toFixed(1)} GiB utilisés`
+                    }
+                    progress={
+                      numVal('cooler_0_pump_duty') !== undefined
+                        ? numVal('cooler_0_pump_duty') ?? 0
+                        : numVal('memory_0_usage') ?? 0
+                    }
                   />
                   <MetricCard
-                    label="Stockage principal"
-                    value={`${(numVal('storage_0_usage') ?? 0).toFixed(1)} %`}
+                    label="Mémoire & Stockage"
+                    value={`${(numVal('memory_0_usage') ?? 0).toFixed(1)} %`}
                     sub={
-                      numVal('storage_0_temperature') !== undefined
-                        ? `Temp ${formatTemp(numVal('storage_0_temperature'), unit)}`
-                        : 'NVMe sain'
+                      numVal('storage_1_temperature') !== undefined
+                        ? `RAM ${(numVal('memory_0_used') ?? 0).toFixed(1)} GiB · SSD ${formatTemp(numVal('storage_1_temperature'), unit)}`
+                        : `RAM ${(numVal('memory_0_used') ?? 0).toFixed(1)} GiB · Disque ${(numVal('storage_0_usage') ?? 0).toFixed(0)} %`
                     }
-                    progress={numVal('storage_0_usage') ?? 0}
+                    progress={numVal('memory_0_usage') ?? 0}
                   />
                 </section>
 
@@ -480,6 +501,59 @@ export default function App() {
                   </div>
                 </Card>
 
+                <Card title="Mode matériel & Compatibilité Anti-Cheat">
+                  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                    <div className="space-y-1 text-xs text-neutral-500">
+                      <div className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {snapshot.manifest.host.security_mode === 'zero_kernel_safe'
+                          ? 'Mode Zero-Kernel / Anti-Cheat Safe (Actif)'
+                          : snapshot.deep_bridge_active
+                            ? 'Mode Deep Hardware (LibreHardwareMonitor + PawnIO actif)'
+                            : 'Mode Deep Hardware demandé (bridge en attente ou mis en pause)'}
+                      </div>
+                      <p>
+                        En mode Anti-Cheat Safe, aucun pilote noyau n'est chargé (100 % compatible
+                        Valorant, FACEIT, EAC). Le mode Deep Hardware ajoute les capteurs CPU Ryzen
+                        SMU, Super I/O carte mère et RAM DDR5, avec pause automatique si FACEIT se
+                        lance.
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        onClick={async () => {
+                          const next =
+                            snapshot.manifest.host.security_mode === 'zero_kernel_safe'
+                              ? 'deep_hardware_pawn_io'
+                              : 'zero_kernel_safe';
+                          const updated = await updateSettings({ security_mode: next });
+                          setSnapshot(updated);
+                          notify(
+                            next === 'zero_kernel_safe'
+                              ? 'Mode Anti-Cheat Safe activé'
+                              : 'Mode Deep Hardware (PawnIO) activé',
+                          );
+                        }}
+                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-100 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                      >
+                        {snapshot.manifest.host.security_mode === 'zero_kernel_safe'
+                          ? 'Activer Deep Hardware'
+                          : 'Revenir en Anti-Cheat Safe'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const updated = await rescanHardware();
+                          setSnapshot(updated);
+                          notify('Détection USB HID & RGB actualisée');
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-100 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Rescanner
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+
                 <Card title="Contrôleurs USB HID natifs détectés">
                   {snapshot.hid_devices.length === 0 ? (
                     <p className="text-xs text-neutral-500">
@@ -526,6 +600,39 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+
+                <Card title="Contrôleurs d'éclairage physiques actifs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {snapshot.rgb_backends.length === 0 ? (
+                        <span className="text-xs text-neutral-500">
+                          Aucun contrôleur ouvert (ferme GIGABYTE Control Center / NZXT CAM puis
+                          clique Rescanner).
+                        </span>
+                      ) : (
+                        snapshot.rgb_backends.map((b) => (
+                          <span
+                            key={b}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            {b}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setSnapshot(await rescanHardware());
+                        notify('Contrôleurs RGB rescannés');
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium dark:border-white/[0.1]"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Rescanner
+                    </button>
+                  </div>
+                </Card>
 
                 <Card title="Contrôle d'ambiance (Intensité · Chaleur Kelvin · Couleur)">
                   <div className="space-y-6">

@@ -147,4 +147,6 @@ export interface DaemonSnapshot {
   temperature_unit: TemperatureUnit;
   scripts: AllowlistedScript[];
   thermal_failsafe_active: boolean;
+  rgb_backends: string[];
+  deep_bridge_active: boolean;
 }
