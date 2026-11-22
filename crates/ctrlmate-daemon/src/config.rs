@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use ctrlmate_protocol::{
-    AllowlistedScript, PollingProfile, RemotePermissions, SecurityMode, TemperatureUnit,
+    AllowlistedScript, MqttConfig, PollingProfile, RemotePermissions, SecurityMode, TemperatureUnit,
 };
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,8 @@ pub struct DaemonConfig {
     pub paired_clients: Vec<StoredClient>,
     #[serde(default)]
     pub scripts: Vec<AllowlistedScript>,
+    #[serde(default)]
+    pub mqtt: MqttConfig,
 }
 
 impl Default for DaemonConfig {
@@ -45,6 +47,7 @@ impl Default for DaemonConfig {
             permissions: RemotePermissions::default(),
             paired_clients: Vec::new(),
             scripts: Vec::new(),
+            mqtt: MqttConfig::default(),
         }
     }
 }

@@ -29,8 +29,10 @@ import {
 } from 'lucide-react';
 import {
   cancelPairing,
+  checkAppUpdate,
   fetchSnapshot,
   formatTemp,
+  installAppUpdate,
   ipcWsUrl,
   kelvinToPreviewHex,
   pressButton,
@@ -44,10 +46,12 @@ import {
 } from './api';
 import type {
   AllowlistedScript,
+  AppUpdateStatus,
   CoolingPreset,
   DaemonSnapshot,
   EntityState,
   LightState,
+  MqttConfig,
   OsUpdateState,
   PollingProfile,
   RemotePermissions,
@@ -85,6 +89,16 @@ export default function App() {
   const [newScriptName, setNewScriptName] = useState('');
   const [newScriptExe, setNewScriptExe] = useState('');
   const [newScriptArgs, setNewScriptArgs] = useState('');
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus | null>(null);
+  const [checkingAppUpdate, setCheckingAppUpdate] = useState(false);
+  const [installingAppUpdate, setInstallingAppUpdate] = useState(false);
+  const [mqttDraft, setMqttDraft] = useState<MqttConfig | null>(null);
+
+  useEffect(() => {
+    if (snapshot?.mqtt && !mqttDraft) {
+      setMqttDraft(snapshot.mqtt);
+    }
+  }, [snapshot, mqttDraft]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -601,36 +615,63 @@ export default function App() {
                   ))}
                 </div>
 
-                <Card title="Contrôleurs d'éclairage physiques actifs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      {snapshot.rgb_backends.length === 0 ? (
-                        <span className="text-xs text-neutral-500">
-                          Aucun contrôleur ouvert (ferme GIGABYTE Control Center / NZXT CAM puis
-                          clique Rescanner).
-                        </span>
-                      ) : (
-                        snapshot.rgb_backends.map((b) => (
-                          <span
-                            key={b}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            {b}
+                <Card title="Contrôleurs & périphériques RGB détectés">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        {snapshot.rgb_backends.length === 0 ? (
+                          <span className="text-xs text-neutral-500">
+                            Aucun contrôleur ouvert (ferme GIGABYTE Control Center / NZXT CAM puis
+                            clique Rescanner).
                           </span>
-                        ))
-                      )}
+                        ) : (
+                          snapshot.rgb_backends.map((b) => (
+                            <span
+                              key={b}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              {b}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setSnapshot(await rescanHardware());
+                          notify('Contrôleurs RGB rescannés');
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium dark:border-white/[0.1]"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Rescanner
+                      </button>
                     </div>
-                    <button
-                      onClick={async () => {
-                        setSnapshot(await rescanHardware());
-                        notify('Contrôleurs RGB rescannés');
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium dark:border-white/[0.1]"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Rescanner
-                    </button>
+
+                    {snapshot.rgb_devices && snapshot.rgb_devices.length > 0 && (
+                      <div className="divide-y divide-neutral-200/70 border-t border-neutral-200/70 pt-2 dark:divide-white/[0.06] dark:border-white/[0.07]">
+                        {snapshot.rgb_devices.map((dev) => (
+                          <div key={dev.id} className="flex items-start justify-between gap-4 py-2.5 text-xs">
+                            <div className="space-y-0.5">
+                              <div className="font-medium text-neutral-900 dark:text-neutral-100">
+                                {dev.name}{' '}
+                                <span className="font-normal text-neutral-500">· {dev.transport}</span>
+                              </div>
+                              <div className="text-neutral-500">{dev.reason}</div>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                dev.controllable
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-neutral-100 text-neutral-600 dark:bg-white/[0.06] dark:text-neutral-400'
+                              }`}
+                            >
+                              {dev.controllable ? 'Contrôlable' : 'Info / Opt-in'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Card>
 
@@ -903,6 +944,60 @@ export default function App() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card title="Application Ctrlmate (Mises à jour automatiques Velopack)">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-medium">
+                        Ctrlmate <span className="tabular">v{snapshot.manifest.host.sw_version}</span>
+                      </div>
+                      <div className="text-xs text-neutral-500">
+                        {appUpdate
+                          ? appUpdate.message
+                          : 'Mises à jour delta GitHub Releases gérées nativement par Velopack.'}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={checkingAppUpdate}
+                        onClick={async () => {
+                          setCheckingAppUpdate(true);
+                          try {
+                            const res = await checkAppUpdate();
+                            setAppUpdate(res);
+                            notify(res.message);
+                          } finally {
+                            setCheckingAppUpdate(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-100 disabled:opacity-50 dark:border-white/[0.1] dark:hover:bg-white/[0.06]"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${checkingAppUpdate ? 'animate-spin' : ''}`} />
+                        Vérifier Ctrlmate
+                      </button>
+                      {appUpdate?.update_available && (
+                        <button
+                          disabled={installingAppUpdate}
+                          onClick={async () => {
+                            setInstallingAppUpdate(true);
+                            try {
+                              const msg = await installAppUpdate();
+                              notify(msg);
+                            } catch (e) {
+                              notify(String(e));
+                            } finally {
+                              setInstallingAppUpdate(false);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-neutral-800 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Mettre à jour & redémarrer
+                        </button>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -1217,6 +1312,114 @@ export default function App() {
                     ))}
                   </div>
                 </Card>
+
+                {mqttDraft && (
+                  <Card title="Transport secondaire — MQTT Device Discovery (HA 2026.11)">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <label className="flex cursor-pointer items-center gap-2 font-medium">
+                          <input
+                            type="checkbox"
+                            checked={mqttDraft.enabled}
+                            onChange={(e) =>
+                              setMqttDraft({ ...mqttDraft, enabled: e.target.checked })
+                            }
+                            className="h-4 w-4 accent-neutral-900 dark:accent-white"
+                          />
+                          <span>Activer MQTT Device + Child Device Discovery</span>
+                        </label>
+                        <span className="flex items-center gap-1.5 text-neutral-500">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              snapshot.mqtt_connected
+                                ? 'bg-emerald-500'
+                                : snapshot.mqtt.enabled
+                                  ? 'bg-amber-500'
+                                  : 'bg-neutral-400'
+                            }`}
+                          />
+                          {snapshot.mqtt_connected
+                            ? 'Broker connecté'
+                            : snapshot.mqtt.enabled
+                              ? 'Reconnexion…'
+                              : 'Désactivé'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <input
+                          value={mqttDraft.host}
+                          onChange={(e) => setMqttDraft({ ...mqttDraft, host: e.target.value })}
+                          placeholder="Hôte broker (ex. omv.home)"
+                          className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                        />
+                        <input
+                          type="number"
+                          value={mqttDraft.port}
+                          onChange={(e) =>
+                            setMqttDraft({ ...mqttDraft, port: Number(e.target.value) || 1883 })
+                          }
+                          placeholder="Port (1883 / 8883)"
+                          className="tabular rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                        />
+                        <input
+                          value={mqttDraft.discovery_prefix}
+                          onChange={(e) =>
+                            setMqttDraft({ ...mqttDraft, discovery_prefix: e.target.value })
+                          }
+                          placeholder="Préfixe (homeassistant)"
+                          className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                        />
+                        <input
+                          value={mqttDraft.username ?? ''}
+                          onChange={(e) =>
+                            setMqttDraft({
+                              ...mqttDraft,
+                              username: e.target.value || null,
+                            })
+                          }
+                          placeholder="Utilisateur (optionnel)"
+                          className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                        />
+                        <input
+                          type="password"
+                          value={mqttDraft.password ?? ''}
+                          onChange={(e) =>
+                            setMqttDraft({
+                              ...mqttDraft,
+                              password: e.target.value || null,
+                            })
+                          }
+                          placeholder="Mot de passe (optionnel)"
+                          className="rounded-lg border border-neutral-200 bg-transparent px-3 py-1.5 text-xs dark:border-white/[0.1]"
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-500">
+                            <input
+                              type="checkbox"
+                              checked={mqttDraft.use_tls}
+                              onChange={(e) =>
+                                setMqttDraft({ ...mqttDraft, use_tls: e.target.checked })
+                              }
+                              className="h-3.5 w-3.5 accent-neutral-900 dark:accent-white"
+                            />
+                            TLS
+                          </label>
+                          <button
+                            onClick={async () => {
+                              const updated = await updateSettings({ mqtt: mqttDraft });
+                              setSnapshot(updated);
+                              notify('Configuration MQTT enregistrée');
+                            }}
+                            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-neutral-900"
+                          >
+                            Appliquer
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
               </div>
             )}
           </div>

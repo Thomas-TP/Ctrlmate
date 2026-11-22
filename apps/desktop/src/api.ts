@@ -1,7 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import type {
   AllowlistedScript,
+  AppUpdateStatus,
   CoolingPreset,
   DaemonSnapshot,
+  MqttConfig,
   PollingProfile,
   RemotePermissions,
   RgbColor,
@@ -85,6 +88,7 @@ export async function updateSettings(patch: {
   temperature_unit?: TemperatureUnit;
   security_mode?: SecurityMode;
   scripts?: AllowlistedScript[];
+  mqtt?: MqttConfig;
 }): Promise<DaemonSnapshot> {
   const res = await fetch(`${ipcHttpBase()}/ipc/settings`, {
     method: 'PUT',
@@ -93,6 +97,24 @@ export async function updateSettings(patch: {
   });
   if (!res.ok) throw new Error(`Settings HTTP ${res.status}`);
   return res.json();
+}
+
+export async function checkAppUpdate(): Promise<AppUpdateStatus> {
+  try {
+    return await invoke<AppUpdateStatus>('check_app_update');
+  } catch {
+    return {
+      current_version: '0.4.0',
+      installed_via_velopack: false,
+      update_available: false,
+      latest_version: null,
+      message: 'Disponible uniquement dans l’application de bureau Ctrlmate (Velopack).',
+    };
+  }
+}
+
+export async function installAppUpdate(): Promise<string> {
+  return invoke<string>('install_app_update');
 }
 
 export function formatTemp(celsius: number | undefined, unit: TemperatureUnit): string {

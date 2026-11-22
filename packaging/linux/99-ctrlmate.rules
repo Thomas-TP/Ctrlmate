@@ -24,3 +24,6 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0db0", MODE="0660", TAG+="uaccess"
 
 # Aquacomputer USB Controllers
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c70", MODE="0660", TAG+="uaccess"
+
+# Motherboard SMBus / I2C (AMD PIIX4 & Intel I801) for native DDR4/DDR5 ENE DRAM RGB (G.Skill Trident Z5)
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660", TAG+="uaccess"

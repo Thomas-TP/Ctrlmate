@@ -135,6 +135,33 @@ export interface AllowlistedScript {
   enabled: boolean;
 }
 
+export interface RgbDeviceStatus {
+  id: string;
+  name: string;
+  zone_id: string;
+  transport: string;
+  controllable: boolean;
+  reason: string;
+}
+
+export interface MqttConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+  use_tls: boolean;
+  discovery_prefix: string;
+}
+
+export interface AppUpdateStatus {
+  current_version: string;
+  installed_via_velopack: boolean;
+  update_available: boolean;
+  latest_version?: string | null;
+  message: string;
+}
+
 export interface DaemonSnapshot {
   manifest: DeviceManifest;
   states: EntityState[];
@@ -148,5 +175,8 @@ export interface DaemonSnapshot {
   scripts: AllowlistedScript[];
   thermal_failsafe_active: boolean;
   rgb_backends: string[];
+  rgb_devices: RgbDeviceStatus[];
   deep_bridge_active: boolean;
+  mqtt: MqttConfig;
+  mqtt_connected: boolean;
 }

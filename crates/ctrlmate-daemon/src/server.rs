@@ -16,16 +16,17 @@ use ctrlmate_hal::smart_poll::{ActivityTier, SmartPoller};
 use ctrlmate_hal::{updates, HardwareCollector};
 use ctrlmate_protocol::{
     AllowlistedScript, ControlCommand, CoolingPreset, DaemonSnapshot, DeviceManifest, EntityState,
-    EntityValue, PairRequest, PairResponse, PairedClientInfo, PollingProfile, RemotePermissions,
-    SecurityMode, TemperatureUnit, WireMessage, PROTOCOL_VERSION,
+    EntityValue, MqttConfig, PairRequest, PairResponse, PairedClientInfo, PollingProfile,
+    RemotePermissions, SecurityMode, TemperatureUnit, WireMessage, PROTOCOL_VERSION,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, watch, Mutex, RwLock};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, info, warn};
 
@@ -44,6 +45,10 @@ pub struct AppState {
     pub ha_tx: broadcast::Sender<WireMessage>,
     /// Broadcasts 1 Hz live snapshots to the local desktop UI.
     pub ui_tx: broadcast::Sender<DaemonSnapshot>,
+    /// Live connection status of the optional MQTT Discovery transport.
+    pub mqtt_connected: AtomicBool,
+    /// Notifies the MQTT worker when configuration changes at runtime.
+    pub mqtt_cfg_tx: watch::Sender<MqttConfig>,
 }
 
 impl AppState {
@@ -53,13 +58,14 @@ impl AppState {
         let cfg = self.config.read().await.clone();
         let connected = self.connected_clients.read().await.clone();
 
-        let (conflicts, hid_devices, failsafe, rgb_backends, deep_bridge_active) = {
+        let (conflicts, hid_devices, failsafe, rgb_backends, rgb_devices, deep_bridge_active) = {
             let col = self.collector.lock().await;
             (
                 col.detect_conflicts(),
                 col.hid_devices().to_vec(),
                 col.is_thermal_failsafe_active(),
                 col.rgb_backend_names(),
+                col.rgb_device_statuses(),
                 col.deep_bridge_active(),
             )
         };
@@ -93,7 +99,10 @@ impl AppState {
             scripts: cfg.scripts,
             thermal_failsafe_active: failsafe,
             rgb_backends,
+            rgb_devices,
             deep_bridge_active,
+            mqtt: cfg.mqtt,
+            mqtt_connected: self.mqtt_connected.load(Ordering::Relaxed),
         }
     }
 
@@ -805,6 +814,7 @@ struct UpdateSettingsRequest {
     temperature_unit: Option<TemperatureUnit>,
     security_mode: Option<SecurityMode>,
     scripts: Option<Vec<AllowlistedScript>>,
+    mqtt: Option<MqttConfig>,
 }
 
 async fn ipc_update_settings(
@@ -832,6 +842,10 @@ async fn ipc_update_settings(
         if let Some(scripts) = req.scripts {
             cfg.scripts = scripts;
             manifest_dirty = true;
+        }
+        if let Some(mqtt) = req.mqtt {
+            cfg.mqtt = mqtt.clone();
+            let _ = state.mqtt_cfg_tx.send(mqtt);
         }
         let _ = cfg.save(&state.data_dir);
     }

@@ -105,8 +105,9 @@ fn read_physical_drive_temperatures() -> Vec<(Option<String>, Option<f64>)> {
         CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows::Win32::System::Ioctl::{
-        PropertyStandardQuery, StorageDeviceTemperatureProperty, IOCTL_STORAGE_QUERY_PROPERTY,
-        STORAGE_PROPERTY_QUERY, STORAGE_TEMPERATURE_DATA_DESCRIPTOR,
+        PropertyStandardQuery, StorageDeviceProperty, StorageDeviceTemperatureProperty,
+        IOCTL_STORAGE_QUERY_PROPERTY, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY,
+        STORAGE_TEMPERATURE_DATA_DESCRIPTOR,
     };
     use windows::Win32::System::IO::DeviceIoControl;
 
@@ -140,6 +141,44 @@ fn read_physical_drive_temperatures() -> Vec<(Option<String>, Option<f64>)> {
             continue;
         }
 
+        // 1. Query real product model string (e.g. "Samsung SSD 990 PRO with Heatsink 2TB")
+        let dev_query = STORAGE_PROPERTY_QUERY {
+            PropertyId: StorageDeviceProperty,
+            QueryType: PropertyStandardQuery,
+            AdditionalParameters: [0],
+        };
+        let mut dev_buf = [0u8; 1024];
+        let mut dev_ret: u32 = 0;
+        let dev_ok = unsafe {
+            DeviceIoControl(
+                handle,
+                IOCTL_STORAGE_QUERY_PROPERTY,
+                Some(&dev_query as *const _ as *const std::ffi::c_void),
+                size_of::<STORAGE_PROPERTY_QUERY>() as u32,
+                Some(dev_buf.as_mut_ptr() as *mut std::ffi::c_void),
+                dev_buf.len() as u32,
+                Some(&mut dev_ret),
+                None,
+            )
+        };
+        let model_name = if dev_ok.is_ok()
+            && (dev_ret as usize) >= size_of::<STORAGE_DEVICE_DESCRIPTOR>()
+        {
+            let d = unsafe { &*(dev_buf.as_ptr() as *const STORAGE_DEVICE_DESCRIPTOR) };
+            let off = d.ProductIdOffset as usize;
+            if off > 0 && off < dev_ret as usize {
+                let slice = &dev_buf[off..dev_ret as usize];
+                let end = slice.iter().position(|&b| b == 0).unwrap_or(slice.len());
+                let s = String::from_utf8_lossy(&slice[..end]).trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 2. Query NVMe / SMART temperature
         let query = STORAGE_PROPERTY_QUERY {
             PropertyId: StorageDeviceTemperatureProperty,
             QueryType: PropertyStandardQuery,
@@ -180,7 +219,7 @@ fn read_physical_drive_temperatures() -> Vec<(Option<String>, Option<f64>)> {
             None
         };
 
-        out.push((None, temp_c));
+        out.push((model_name, temp_c));
     }
 
     out

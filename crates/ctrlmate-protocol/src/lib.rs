@@ -371,6 +371,43 @@ pub struct DetectedHidDevice {
     pub path: String,
 }
 
+/// Hardware status & transport diagnostics for a detected RGB controller or LED component.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RgbDeviceStatus {
+    pub id: String,
+    pub name: String,
+    pub zone_id: String,
+    pub transport: String,
+    pub controllable: bool,
+    pub reason: String,
+}
+
+/// Optional secondary Home Assistant 2026.11 MQTT Device + Child Device Discovery transport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MqttConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub use_tls: bool,
+    pub discovery_prefix: String,
+}
+
+impl Default for MqttConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "homeassistant.local".into(),
+            port: 1883,
+            username: None,
+            password: None,
+            use_tls: false,
+            discovery_prefix: "homeassistant".into(),
+        }
+    }
+}
+
 /// Allowlisted custom user script exposed as a Home Assistant button.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AllowlistedScript {
@@ -527,7 +564,13 @@ pub struct DaemonSnapshot {
     #[serde(default)]
     pub rgb_backends: Vec<String>,
     #[serde(default)]
+    pub rgb_devices: Vec<RgbDeviceStatus>,
+    #[serde(default)]
     pub deep_bridge_active: bool,
+    #[serde(default)]
+    pub mqtt: MqttConfig,
+    #[serde(default)]
+    pub mqtt_connected: bool,
 }
 
 #[cfg(test)]

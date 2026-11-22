@@ -18,8 +18,8 @@ use ctrlmate_cooling::{CoolingTargets, CoolingWatchdog, ThermalReadings, Thermal
 use ctrlmate_protocol::{
     AllowlistedScript, ChildDeviceInfo, CoolingPreset, DetectedHidDevice, DeviceCategory,
     DeviceManifest, EntityCategory, EntityDescriptor, EntityPlatform, EntityState, EntityValue,
-    LightCapabilities, LightState, NumberRange, OsUpdateState, SecurityMode, SoftwareConflict,
-    StateClass, PROTOCOL_VERSION,
+    LightCapabilities, LightState, NumberRange, OsUpdateState, RgbDeviceStatus, SecurityMode,
+    SoftwareConflict, StateClass, PROTOCOL_VERSION,
 };
 use ctrlmate_rgb::backends::RgbHardwareDispatcher;
 use ctrlmate_rgb::LightingEngine;
@@ -52,18 +52,22 @@ impl HardwareCollector {
         let gpu = gpu::GpuProvider::new();
         let hid_devices = hid::scan_known_hid_devices();
         let kraken = kraken::KrakenDriver::probe();
-        let rgb_hw = RgbHardwareDispatcher::discover();
         let mut lhm_bridge = lhm_bridge::LhmBridgeManager::new();
+        let faceit_active = conflicts::detect_running_conflicts(system.sys())
+            .iter()
+            .any(|c| c.id == "faceit_ac");
+        let allow_kernel_smbus =
+            security_mode == SecurityMode::DeepHardwarePawnIo && !faceit_active;
 
         if security_mode == SecurityMode::DeepHardwarePawnIo {
-            let conflicts = conflicts::detect_running_conflicts(system.sys());
-            let faceit_active = conflicts.iter().any(|c| c.id == "faceit_ac");
             if faceit_active {
                 warn!("FACEIT Anti-Cheat detected — auto-pausing Deep Hardware (PawnIO) bridge");
             } else {
                 lhm_bridge.start();
             }
         }
+
+        let rgb_hw = RgbHardwareDispatcher::discover(allow_kernel_smbus);
 
         let mut lighting = LightingEngine::new();
         Self::register_lighting_zones(&mut lighting, &hid_devices, &rgb_hw);
@@ -123,17 +127,20 @@ impl HardwareCollector {
                 _ => {}
             }
         }
-        if rgb_hw.has_openrgb_ram() {
+        if rgb_hw.has_ram_rgb() {
             lighting.register_zone("light_ram", LightState::default());
         }
     }
 
-    /// Re-probes USB HID controllers (Kraken, Gigabyte IT5702, NZXT RGB) and OpenRGB SDK.
+    /// Re-probes USB HID controllers (Kraken, Gigabyte IT5702, NZXT RGB), ENE SMBus RAM, and OpenRGB SDK.
     /// Useful immediately after closing conflicting vendor apps (GCC / NZXT CAM / Armoury Crate).
     pub fn rescan_hardware(&mut self) {
         self.hid_devices = hid::scan_known_hid_devices();
         self.kraken = kraken::KrakenDriver::probe();
-        self.rgb_hw = RgbHardwareDispatcher::discover();
+        let faceit_active = self.detect_conflicts().iter().any(|c| c.id == "faceit_ac");
+        let allow_kernel_smbus =
+            self.security_mode == SecurityMode::DeepHardwarePawnIo && !faceit_active;
+        self.rgb_hw = RgbHardwareDispatcher::discover(allow_kernel_smbus);
         Self::register_lighting_zones(&mut self.lighting, &self.hid_devices, &self.rgb_hw);
         self.last_cooling_targets = None;
         info!(
@@ -163,6 +170,12 @@ impl HardwareCollector {
                 }
             }
         }
+        // Re-discover RGB backends so PawnIO SMBus DRAM opens/closes immediately on mode switch!
+        let faceit_active = self.detect_conflicts().iter().any(|c| c.id == "faceit_ac");
+        let allow_kernel_smbus =
+            self.security_mode == SecurityMode::DeepHardwarePawnIo && !faceit_active;
+        self.rgb_hw = RgbHardwareDispatcher::discover(allow_kernel_smbus);
+        Self::register_lighting_zones(&mut self.lighting, &self.hid_devices, &self.rgb_hw);
     }
 
     pub fn deep_bridge_active(&self) -> bool {
@@ -171,6 +184,10 @@ impl HardwareCollector {
 
     pub fn rgb_backend_names(&self) -> Vec<String> {
         self.rgb_hw.active_backend_names()
+    }
+
+    pub fn rgb_device_statuses(&self) -> Vec<RgbDeviceStatus> {
+        self.rgb_hw.device_statuses().to_vec()
     }
 
     pub fn hid_devices(&self) -> &[DetectedHidDevice] {
@@ -808,15 +825,17 @@ impl HardwareCollector {
         let mut thermal = ThermalReadings::default();
         let mut primary_gpu_load: Option<u32> = None;
 
-        // Auto-Pause PawnIO bridge if FACEIT Anti-Cheat starts while in DeepHardwarePawnIo mode
-        if self.lhm_bridge.is_running()
+        // Auto-Pause PawnIO bridge AND PawnIO SMBus if FACEIT Anti-Cheat starts while in DeepHardwarePawnIo mode
+        if self.security_mode == SecurityMode::DeepHardwarePawnIo
+            && (self.lhm_bridge.is_running() || self.rgb_hw.has_ram_rgb())
             && self
                 .detect_conflicts()
                 .iter()
                 .any(|c| c.id == "faceit_ac")
         {
-            warn!("FACEIT Anti-Cheat launched — auto-pausing Deep Hardware (PawnIO) bridge");
+            warn!("FACEIT Anti-Cheat launched — auto-pausing Deep Hardware (PawnIO) bridge & SMBus");
             self.lhm_bridge.stop();
+            self.rgb_hw = RgbHardwareDispatcher::discover(false);
         }
 
         let deep = self.lhm_bridge.latest();
