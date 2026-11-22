@@ -4,42 +4,159 @@
 
 @layer base {
   :root {
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --bg-canvas: #f5f5f7;
+    --bg-chrome: #fbfbfc;
+    --bg-surface: #ffffff;
+    --bg-subtle: #f1f2f5;
+    --bg-elevated: #ffffff;
+    --border-hairline: rgba(15, 23, 42, 0.08);
+    --border-strong: rgba(15, 23, 42, 0.15);
+    --text-primary: #111216;
+    --text-secondary: #52525b;
+    --text-muted: #71717a;
+    --text-faint: #a1a1aa;
+    --card-shadow: 0 0 0 1px rgba(15, 23, 42, 0.075), 0 1px 2px rgba(15, 23, 42, 0.035);
+    --card-shadow-hover: 0 0 0 1px rgba(15, 23, 42, 0.14), 0 4px 12px rgba(15, 23, 42, 0.05);
+
+    font-family: "Inter", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    color-scheme: light;
   }
 
-  .tabular {
-    font-variant-numeric: tabular-nums;
-    font-family: "JetBrains Mono", "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  .dark {
+    --bg-canvas: #09090b;
+    --bg-chrome: #0d0d10;
+    --bg-surface: #111115;
+    --bg-subtle: #18181e;
+    --bg-elevated: #17171d;
+    --border-hairline: rgba(255, 255, 255, 0.075);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --text-primary: #f4f4f6;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --text-faint: #52525b;
+    --card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.075), 0 4px 16px rgba(0, 0, 0, 0.35);
+    --card-shadow-hover: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 8px 24px rgba(0, 0, 0, 0.45);
+
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  code,
+  .selectable {
+    user-select: text;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 3.5px #3b82f6;
   }
 }
 
-/* Subtle minimalist range sliders */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-family: "JetBrains Mono", "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.surface-card {
+  background-color: var(--bg-surface);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.surface-card-interactive:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+.hairline-b {
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.hairline-r {
+  border-right: 1px solid var(--border-hairline);
+}
+
+.hairline-t {
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* Precision thin scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
   background: transparent;
-  cursor: pointer;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 138, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 138, 0.45);
+}
+
+/* Precision tactile sliders (single-track Apple/Linear capsule) */
+input[type="range"].ctrl-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 16px;
-  width: 16px;
+  cursor: pointer;
+  height: 8px;
+  border-radius: 9999px;
+}
+
+input[type="range"].ctrl-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+input[type="range"].ctrl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
   border-radius: 9999px;
   background: #ffffff;
-  border: 1.5px solid rgba(0, 0, 0, 0.25);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  border: 1.5px solid rgba(15, 23, 42, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.38);
   margin-top: -5px;
-  transition: transform 120ms ease;
+  transition: transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 110ms ease;
 }
 
-input[type="range"]::-webkit-slider-thumb:hover {
+input[type="range"].ctrl-slider:hover::-webkit-slider-thumb {
   transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 9999px;
+input[type="range"].ctrl-slider:active::-webkit-slider-thumb {
+  transform: scale(1.16);
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.view-enter {
+  animation: fadeSlideIn 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }

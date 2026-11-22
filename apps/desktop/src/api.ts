@@ -104,7 +104,7 @@ export async function checkAppUpdate(): Promise<AppUpdateStatus> {
     return await invoke<AppUpdateStatus>('check_app_update');
   } catch {
     return {
-      current_version: '0.4.0',
+      current_version: '0.5.0',
       installed_via_velopack: false,
       update_available: false,
       latest_version: null,
