@@ -1,0 +1,3 @@
+# System user and group for ctrlmated (Arch Linux; also usable on any sysusers.d distribution).
+g ctrlmate - -
+u ctrlmate - "Ctrlmate hardware daemon" /var/lib/ctrlmate /usr/bin/nologin

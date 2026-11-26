@@ -1,0 +1,6 @@
+# Pinned toolchain for reproducible builds (CI and local). MSRV is declared in
+# Cargo.toml (`rust-version`); CI additionally checks it.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -38,6 +38,8 @@ pub fn scan_known_hid_devices() -> Vec<DetectedHidDevice> {
         }
     };
 
+    // Identical devices (three NZXT RGB controllers, ...) have different paths and must all be listed;
+    // the same path can appear twice in the OS list, so the path is the identity.
     let mut seen = BTreeSet::new();
     let mut found = Vec::new();
 
@@ -55,13 +57,14 @@ pub fn scan_known_hid_devices() -> Vec<DetectedHidDevice> {
             continue;
         };
 
-        // Deduplicate multi-interface HID collections per (VID, PID)
-        if !seen.insert((vid, pid)) {
+        let path = dev.path().to_string_lossy().to_string();
+        if !seen.insert(path.clone()) {
             continue;
         }
-
-        let path = dev.path().to_string_lossy().to_string();
-        debug!("Discovered HID controller {:04x}:{:04x} ({product}) -> {hint}", vid, pid);
+        debug!(
+            "Discovered HID controller {:04x}:{:04x} ({product}) -> {hint}",
+            vid, pid
+        );
 
         found.push(DetectedHidDevice {
             vendor_id: vid,
@@ -81,5 +84,8 @@ pub fn scan_known_hid_devices() -> Vec<DetectedHidDevice> {
         });
     }
 
+    found.sort_by(|a, b| {
+        (a.vendor_id, a.product_id, &a.path).cmp(&(b.vendor_id, b.product_id, &b.path))
+    });
     found
 }

@@ -3,11 +3,14 @@ name = "ctrlmate-cooling"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Cooling engine and thermal safety watchdog"
 
 [dependencies]
 ctrlmate-protocol = { path = "../ctrlmate-protocol" }
-serde.workspace = true
-tracing.workspace = true
 
 [lints]
 workspace = true

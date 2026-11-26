@@ -1,0 +1,19 @@
+{
+  "type": "state_batch",
+  "states": [
+    {"id": "cpu_0_load", "value": {"kind": "float", "value": 12.5}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "cpu_0_temperature", "value": {"kind": "unavailable"}, "status": {"available": false, "reason": "requires_deep_hardware"}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "gpu_0_temperature", "value": {"kind": "float", "value": 51.0}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "cooler_0_pump_rpm", "value": {"kind": "int", "value": 2400}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "active_application", "value": {"kind": "text", "value": "firefox.exe"}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "light_global", "value": {"kind": "light", "value": {"is_on": true, "brightness": 204, "color_mode": "color_temp", "rgb": {"r": 255, "g": 224, "b": 189}, "color_temp_kelvin": 4000}}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "light_cooler", "value": {"kind": "light", "value": {"is_on": false, "brightness": 100, "color_mode": "rgb", "rgb": {"r": 10, "g": 20, "b": 30}, "color_temp_kelvin": 3000}}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "cooling_preset", "value": {"kind": "text", "value": "balanced"}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "audio_output", "value": {"kind": "text", "value": "Speakers"}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "thermal_failsafe", "value": {"kind": "bool", "value": false}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "reboot_required", "value": {"kind": "bool", "value": true}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "os_updates", "value": {"kind": "update", "value": {"installed_version": "10.0.26100", "latest_version": "", "pending_count": 2, "pending_titles": ["2026-11 Cumulative Update", "Defender definitions"], "kb_ids": ["KB5099999", "KB2267602"], "in_progress": false, "reboot_required": true, "last_checked": "2026-11-25T09:00:00Z"}}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "master_volume", "value": {"kind": "float", "value": 35.0}, "updated_at": "2026-11-25T10:00:00Z"},
+    {"id": "audio_mute", "value": {"kind": "bool", "value": false}, "updated_at": "2026-11-25T10:00:00Z"}
+  ]
+}

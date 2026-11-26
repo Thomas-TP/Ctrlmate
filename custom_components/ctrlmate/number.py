@@ -1,4 +1,4 @@
-"""Number platform for Ctrlmate (Master Volume, numeric controls)."""
+"""Number platform (master volume)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import CtrlmateConfigEntry
 from .coordinator import CtrlmateCoordinator
-from .entity import CtrlmateEntity
+from .entity import CtrlmateEntity, async_setup_manifest_platform
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -18,43 +20,27 @@ async def async_setup_entry(
     entry: CtrlmateConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    added: set[str] = set()
-
-    def _sync_entities() -> None:
-        new_entities = []
-        for desc in coordinator.manifest.get("entities", []):
-            if desc.get("platform") != "number" or not desc.get("exposed", True):
-                continue
-            eid = desc["id"]
-            if eid not in added:
-                added.add(eid)
-                new_entities.append(CtrlmateNumber(coordinator, desc))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.add_manifest_listener(_sync_entities))
+    async_setup_manifest_platform(hass, entry, async_add_entities, "number", CtrlmateNumber)
 
 
 class CtrlmateNumber(CtrlmateEntity, NumberEntity):
-    """Adjustable numeric control (e.g. Master Volume 0-100%)."""
+    """Adjustable value with bounds from the manifest."""
 
     _attr_mode = NumberMode.SLIDER
 
     def __init__(self, coordinator: CtrlmateCoordinator, descriptor: dict[str, Any]) -> None:
         super().__init__(coordinator, descriptor)
-        rng = descriptor.get("number_range") or {}
-        self._attr_native_min_value = float(rng.get("min", 0.0))
-        self._attr_native_max_value = float(rng.get("max", 100.0))
-        self._attr_native_step = float(rng.get("step", 1.0))
+        rng = descriptor.get("number_range") or {"min": 0, "max": 100, "step": 1}
+        self._attr_native_min_value = float(rng["min"])
+        self._attr_native_max_value = float(rng["max"])
+        self._attr_native_step = float(rng["step"])
         if unit := descriptor.get("unit_of_measurement"):
             self._attr_native_unit_of_measurement = unit
 
     @property
     def native_value(self) -> float | None:
-        val = self._raw_value()
-        return float(val) if val is not None else None
+        value = self._raw_value()
+        return float(value) if isinstance(value, (int, float)) else None
 
     async def async_set_native_value(self, value: float) -> None:
         await self.coordinator.async_send_command(

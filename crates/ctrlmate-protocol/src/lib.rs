@@ -4,6 +4,16 @@
 //! `has_entity_name = true`, canonical °C telemetry with native HA °C/°F
 //! conversion, RGB + Kelvin lighting, cooling presets, OS updates & control).
 
+mod cooling;
+mod result;
+mod session;
+mod status;
+
+pub use cooling::*;
+pub use result::*;
+pub use session::*;
+pub use status::*;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -35,18 +45,30 @@ pub enum SecurityMode {
     DeepHardwarePawnIo,
 }
 
-/// Adaptive polling profile toward Home Assistant.
+/// Publication profile toward Home Assistant / MQTT. It sets the minimum interval between
+/// two *numeric* updates of the same entity and the heartbeat (forced resend); boolean, text,
+/// light and update entities are always pushed immediately on change.
+///
+/// | profile | min interval (gaming / active / locked-idle) | heartbeat |
+/// |---|---|---|
+/// | `intelligent` | 2 s / 5 s / 30 s | 60 s / 60 s / 120 s |
+/// | `eco` | 15 s | 120 s |
+/// | `balanced` | 5 s | 60 s |
+/// | `realtime` | 1 s | 30 s |
+///
+/// The daemon's hardware *sampling* rate is separate: it is chosen by activity tier and
+/// never slower than 5 s because the cooling watchdog needs fresh temperatures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PollingProfile {
-    /// Adaptive deadband + dynamic cadence (2s gaming/load, 5s active, 30s locked, 60s heartbeat).
+    /// Adaptive deadband + cadence that follows the activity tier.
     #[default]
     Intelligent,
-    /// Low-traffic mode (10s active, 30s idle).
+    /// Low-traffic mode.
     Eco,
-    /// Balanced fixed-ish cadence (5s with light deadband).
+    /// Fixed 5 s cadence with deadband.
     Balanced,
-    /// High-frequency telemetry (1–2s).
+    /// High-frequency telemetry (1 s).
     Realtime,
 }
 
@@ -270,7 +292,8 @@ impl Default for LightState {
     }
 }
 
-/// State of the OS Update entity (`update.os_updates`).
+/// State of the OS Update entity (`update.os_updates`) as produced by the hardware layer.
+/// The honest, UI-facing view is [`UpdatesInfo`] in the snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OsUpdateState {
     pub installed_version: String,
@@ -282,26 +305,28 @@ pub struct OsUpdateState {
     pub last_checked: Option<DateTime<Utc>>,
 }
 
-/// Cooling preset exposed to Home Assistant and desktop UI.
+/// User-selectable cooling preset (Home Assistant `select` + desktop UI).
+/// `full_speed` is not a preset any more: it is the emergency state (`CoolingState::Failsafe`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CoolingPreset {
+    /// Balanced curve; switches to `gaming` automatically while the agent reports a game.
     #[default]
     Auto,
     Silent,
     Balanced,
     Performance,
-    FullSpeed,
+    Gaming,
 }
 
 impl CoolingPreset {
-    pub fn as_ha_option(self) -> &'static str {
+    pub const fn as_ha_option(self) -> &'static str {
         match self {
             Self::Auto => "auto",
             Self::Silent => "silent",
             Self::Balanced => "balanced",
             Self::Performance => "performance",
-            Self::FullSpeed => "full_speed",
+            Self::Gaming => "gaming",
         }
     }
 
@@ -311,19 +336,26 @@ impl CoolingPreset {
             "silent" => Some(Self::Silent),
             "balanced" => Some(Self::Balanced),
             "performance" => Some(Self::Performance),
-            "full_speed" => Some(Self::FullSpeed),
+            "gaming" => Some(Self::Gaming),
             _ => None,
         }
     }
 
-    pub fn all_ha_options() -> Vec<String> {
-        vec![
-            "auto".into(),
-            "silent".into(),
-            "balanced".into(),
-            "performance".into(),
-            "full_speed".into(),
+    pub const fn all() -> [Self; 5] {
+        [
+            Self::Auto,
+            Self::Silent,
+            Self::Balanced,
+            Self::Performance,
+            Self::Gaming,
         ]
+    }
+
+    pub fn all_ha_options() -> Vec<String> {
+        Self::all()
+            .iter()
+            .map(|p| p.as_ha_option().to_string())
+            .collect()
     }
 }
 
@@ -336,7 +368,8 @@ pub enum EntityValue {
     Bool(bool),
     Text(String),
     Light(LightState),
-    Update(OsUpdateState),
+    /// Honest OS update status (see [`UpdatesInfo`]); there is no fabricated `latest_version`.
+    Update(UpdatesInfo),
     Unavailable,
 }
 
@@ -500,6 +533,10 @@ pub enum WireMessage {
     CommandResult {
         request_id: String,
         ok: bool,
+        /// Stable [`ResultCode`] string. Older peers omit it.
+        #[serde(default)]
+        code: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
     Ping {
@@ -544,7 +581,11 @@ pub struct PairedClientInfo {
     pub client_id: String,
     pub client_name: String,
     pub paired_at: DateTime<Utc>,
+    /// At least one live connection.
     pub connected: bool,
+    /// Number of live connections (each has its own connection id inside the daemon).
+    #[serde(default)]
+    pub connections: u32,
 }
 
 /// Live snapshot returned to the desktop UI over local IPC.
@@ -571,6 +612,28 @@ pub struct DaemonSnapshot {
     pub mqtt: MqttConfig,
     #[serde(default)]
     pub mqtt_connected: bool,
+    /// The MQTT password is never sent back; this tells whether one is stored.
+    #[serde(default)]
+    pub mqtt_password_set: bool,
+    /// Requested cooling preset (the effective one is in `cooling_policy`).
+    #[serde(default)]
+    pub cooling_preset: CoolingPreset,
+    #[serde(default)]
+    pub cooling_policy: CoolingPolicy,
+    /// Availability of expected sensors, keyed by entity id.
+    #[serde(default)]
+    pub sensor_status: BTreeMap<String, SensorStatus>,
+    /// Latest interactive-session state (from the agent or the in-process fallback);
+    /// `None` when no fresh state exists.
+    #[serde(default)]
+    pub session: Option<SessionState>,
+    #[serde(default)]
+    pub service: ServiceInfo,
+    #[serde(default)]
+    pub updates: UpdatesInfo,
+    /// OS update scans include optional updates, drivers and feature upgrades.
+    #[serde(default)]
+    pub include_optional_updates: bool,
 }
 
 #[cfg(test)]
@@ -592,8 +655,124 @@ mod tests {
         };
 
         let encoded = serde_json::to_string(&msg).expect("serialize wire message");
-        let decoded: WireMessage = serde_json::from_str(&encoded).expect("deserialize wire message");
+        let decoded: WireMessage =
+            serde_json::from_str(&encoded).expect("deserialize wire message");
         assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn command_result_wire_is_additive() {
+        // Old shape (no `code`) still parses; new shape carries the code.
+        let old: WireMessage =
+            serde_json::from_str(r#"{"type":"command_result","request_id":"1","ok":true}"#)
+                .unwrap();
+        assert!(matches!(old, WireMessage::CommandResult { ref code, .. } if code.is_empty()));
+        let new = WireMessage::CommandResult {
+            request_id: "1".into(),
+            ok: false,
+            code: "no_agent".into(),
+            message: None,
+        };
+        let v = serde_json::to_value(new).unwrap();
+        assert_eq!(v["code"], "no_agent");
+        assert_eq!(v["ok"], false);
+        assert!(v.get("message").is_none());
+    }
+
+    #[test]
+    fn full_speed_is_not_a_user_preset() {
+        assert_eq!(CoolingPreset::from_ha_option("full_speed"), None);
+        assert!(serde_json::from_str::<CoolingPreset>("\"full_speed\"").is_err());
+        assert_eq!(
+            CoolingPreset::from_ha_option("gaming"),
+            Some(CoolingPreset::Gaming)
+        );
+    }
+
+    #[test]
+    fn legacy_snapshot_json_still_parses() {
+        // Everything added in v0.6 is optional on the wire.
+        let snap = sample_snapshot();
+        let mut v = serde_json::to_value(&snap).unwrap();
+        let obj = v.as_object_mut().unwrap();
+        for k in [
+            "mqtt_password_set",
+            "cooling_preset",
+            "cooling_policy",
+            "sensor_status",
+            "session",
+            "service",
+            "updates",
+            "include_optional_updates",
+        ] {
+            obj.remove(k);
+        }
+        let back: DaemonSnapshot = serde_json::from_value(v).unwrap();
+        assert_eq!(back.cooling_policy, CoolingPolicy::builtin());
+        assert!(back.session.is_none());
+    }
+
+    fn sample_snapshot() -> DaemonSnapshot {
+        DaemonSnapshot {
+            manifest: DeviceManifest {
+                protocol_version: PROTOCOL_VERSION,
+                host: HostDeviceInfo {
+                    device_id: "d".into(),
+                    name: "pc".into(),
+                    manufacturer: "m".into(),
+                    model: "x".into(),
+                    os_name: "Windows".into(),
+                    os_version: "11".into(),
+                    sw_version: "0.6.0".into(),
+                    mac_address: None,
+                    security_mode: SecurityMode::ZeroKernelSafe,
+                },
+                child_devices: vec![],
+                entities: vec![],
+            },
+            states: vec![],
+            conflicts: vec![],
+            hid_devices: vec![],
+            pairing: PairingSessionInfo {
+                active: false,
+                pin: None,
+                expires_at: None,
+                cert_fingerprint: "f".into(),
+                listen_port: DEFAULT_HA_PORT,
+            },
+            paired_clients: vec![],
+            permissions: RemotePermissions::default(),
+            polling_profile: PollingProfile::default(),
+            temperature_unit: TemperatureUnit::default(),
+            scripts: vec![],
+            thermal_failsafe_active: false,
+            rgb_backends: vec![],
+            rgb_devices: vec![],
+            deep_bridge_active: false,
+            mqtt: MqttConfig::default(),
+            mqtt_connected: false,
+            mqtt_password_set: false,
+            cooling_preset: CoolingPreset::Auto,
+            cooling_policy: CoolingPolicy::builtin(),
+            sensor_status: BTreeMap::new(),
+            session: None,
+            service: ServiceInfo::default(),
+            updates: UpdatesInfo::default(),
+            include_optional_updates: false,
+        }
+    }
+
+    #[test]
+    fn ipc_event_snapshot_is_tagged() {
+        let ev = IpcEvent::Snapshot(Box::new(sample_snapshot()));
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["type"], "snapshot");
+        assert_eq!(v["permissions"]["telemetry"], true);
+        assert_eq!(serde_json::from_value::<IpcEvent>(v).unwrap(), ev);
+        assert_eq!(
+            serde_json::to_value(IpcEvent::AuthOk).unwrap(),
+            serde_json::json!({"type":"auth_ok"})
+        );
     }
 
     #[test]

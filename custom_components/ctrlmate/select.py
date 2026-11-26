@@ -1,4 +1,4 @@
-"""Select platform for Ctrlmate (cooling presets, audio output selector)."""
+"""Select platform: cooling preset and audio output."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import CtrlmateConfigEntry
+from .const import COOLING_PRESETS
 from .coordinator import CtrlmateCoordinator
-from .entity import CtrlmateEntity
+from .entity import CtrlmateEntity, async_setup_manifest_platform
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -18,51 +21,37 @@ async def async_setup_entry(
     entry: CtrlmateConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    added: set[str] = set()
-
-    def _sync_entities() -> None:
-        new_entities = []
-        for desc in coordinator.manifest.get("entities", []):
-            if desc.get("platform") != "select" or not desc.get("exposed", True):
-                continue
-            eid = desc["id"]
-            if eid not in added:
-                added.add(eid)
-                new_entities.append(CtrlmateSelect(coordinator, desc))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.add_manifest_listener(_sync_entities))
+    async_setup_manifest_platform(hass, entry, async_add_entities, "select", CtrlmateSelect)
 
 
 class CtrlmateSelect(CtrlmateEntity, SelectEntity):
-    """Selectable mode or output exposed by Ctrlmate."""
+    """Option list owned by the daemon."""
 
     def __init__(self, coordinator: CtrlmateCoordinator, descriptor: dict[str, Any]) -> None:
         super().__init__(coordinator, descriptor)
-        self._attr_options = list(descriptor.get("options") or [])
+        if self.key == "cooling_preset":
+            self._attr_translation_key = "cooling_preset"
 
     @property
     def options(self) -> list[str]:
-        for desc in self.coordinator.manifest.get("entities", []):
-            if desc.get("id") == self.key:
-                opts = desc.get("options")
-                if opts:
-                    return list(opts)
-        return self._attr_options
+        declared = [str(o) for o in self.descriptor.get("options", [])]
+        if self.key == "cooling_preset":
+            # full_speed is the emergency state, not a user preset.
+            return [o for o in COOLING_PRESETS if o in declared] or list(COOLING_PRESETS)
+        return declared
 
     @property
     def current_option(self) -> str | None:
-        val = self._raw_value()
-        return str(val) if val is not None else None
+        value = self._raw_value()
+        return value if isinstance(value, str) and value in self.options else None
 
     async def async_select_option(self, option: str) -> None:
-        await self.coordinator.async_send_command(
-            {
-                "action": "set_select",
+        if self.key == "cooling_preset":
+            command = {
+                "action": "set_cooling_preset",
                 "entity_id": self.key,
-                "option": option,
+                "preset": option,
             }
-        )
+        else:
+            command = {"action": "set_select", "entity_id": self.key, "option": option}
+        await self.coordinator.async_send_command(command)

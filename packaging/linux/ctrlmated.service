@@ -1,18 +1,60 @@
 [Unit]
-Description=Ctrlmate Cross-Platform PC Telemetry & Control Daemon
+Description=Ctrlmate hardware daemon (telemetry, cooling, lighting, Home Assistant)
+Documentation=https://github.com/Thomas-TP/Ctrlmate
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ctrlmated
+User=ctrlmate
+Group=ctrlmate
+# Device access comes from the udev rules (group ctrlmate). If a device node on
+# your system belongs to another group, add it in a drop-in:
+#   systemctl edit ctrlmated   ->   [Service]  SupplementaryGroups=<group>
+ExecStart=/usr/bin/ctrlmated --data-dir /var/lib/ctrlmate
 Restart=on-failure
 RestartSec=3
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+# Leave time to restore firmware cooling control on clean shutdown.
+TimeoutStopSec=15
+
+StateDirectory=ctrlmate
+StateDirectoryMode=0750
+ConfigurationDirectory=ctrlmate
+ConfigurationDirectoryMode=0750
+RuntimeDirectory=ctrlmate
+RuntimeDirectoryMode=0750
+
+# Hardening. No capabilities are needed (all ports are above 1024).
+CapabilityBoundingSet=
+AmbientCapabilities=
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/var/lib/ctrlmate /etc/ctrlmate
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# AF_NETLINK: udev/hidraw enumeration. AF_INET*: LAN TLS, mDNS, MQTT, loopback IPC.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0027
+# Only the device classes Ctrlmate talks to: hidraw, i2c-dev, NVIDIA (NVML).
+# MemoryDenyWriteExecute is intentionally not set: the NVIDIA driver library maps W+X pages.
+DevicePolicy=closed
+DeviceAllow=char-hidraw rw
+DeviceAllow=char-i2c-dev rw
+DeviceAllow=char-nvidia-frontend rw
+DeviceAllow=char-nvidia-uvm rw
+DeviceAllow=char-nvidiactl rw
 
 [Install]
 WantedBy=multi-user.target

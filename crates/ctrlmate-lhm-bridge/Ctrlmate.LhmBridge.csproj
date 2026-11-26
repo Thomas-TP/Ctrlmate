@@ -7,9 +7,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
+    <Version>0.6.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
+    <!--
+      LibreHardwareMonitorLib 0.9.5 ("Swap WinRing0 to PawnIO", released 2026-01-07) is the first
+      release that uses PawnIO instead of the WinRing0 driver; 0.9.6 (2026-02-14) updates the PawnIO
+      modules to 2.2. 0.9.4 (previously pinned here) still ships WinRing0. Do not downgrade
+      (architecture section 7).
+    -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 </Project>

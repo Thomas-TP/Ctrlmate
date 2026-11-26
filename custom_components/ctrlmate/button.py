@@ -1,16 +1,19 @@
-"""Button platform for Ctrlmate (Power, Display Off, Scripts, and always-available Wake-on-LAN)."""
+"""Button platform: PC actions, user scripts and Wake-on-LAN."""
 
 from __future__ import annotations
 
-from typing import Any
-
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import CtrlmateConfigEntry
+from .const import DOMAIN
 from .coordinator import CtrlmateCoordinator
-from .entity import CtrlmateEntity
+from .entity import CtrlmateEntity, async_setup_manifest_platform
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -18,52 +21,37 @@ async def async_setup_entry(
     entry: CtrlmateConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    added: set[str] = set()
-
-    # Wake-on-LAN button stays available even while the PC is powered off.
-    if coordinator.mac_address:
-        async_add_entities([CtrlmateWakeButton(coordinator)])
-
-    def _sync_entities() -> None:
-        new_entities = []
-        for desc in coordinator.manifest.get("entities", []):
-            if desc.get("platform") != "button" or not desc.get("exposed", True):
-                continue
-            eid = desc["id"]
-            if eid not in added:
-                added.add(eid)
-                new_entities.append(CtrlmateActionButton(coordinator, desc))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.add_manifest_listener(_sync_entities))
+    # Wake-on-LAN must exist (and work) while the PC is off, so it does not depend
+    # on the manifest or on the connection.
+    async_add_entities([CtrlmateWakeButton(entry.runtime_data)])
+    async_setup_manifest_platform(hass, entry, async_add_entities, "button", CtrlmateButton)
 
 
-class CtrlmateWakeButton(CtrlmateEntity, ButtonEntity):
-    """Wake-on-LAN button executed locally from Home Assistant."""
-
-    _attr_icon = "mdi:lan-connect"
-
-    def __init__(self, coordinator: CtrlmateCoordinator) -> None:
-        super().__init__(
-            coordinator,
-            {"id": "wake_on_lan", "name": "Wake on LAN", "platform": "button"},
-        )
+class CtrlmateButton(CtrlmateEntity, ButtonEntity):
+    """Stateless action executed on the PC."""
 
     @property
     def available(self) -> bool:
-        return bool(self.coordinator.mac_address)
+        return self.coordinator.connected
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_send_command({"action": "press_button", "entity_id": self.key})
+
+
+class CtrlmateWakeButton(CoordinatorEntity[CtrlmateCoordinator], ButtonEntity):
+    """Send a Wake-on-LAN magic packet."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "wake_on_lan"
+
+    def __init__(self, coordinator: CtrlmateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.device_id}_wake_on_lan"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.device_id)})
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.mac_address is not None
 
     async def async_press(self) -> None:
         await self.coordinator.async_wake_pc()
-
-
-class CtrlmateActionButton(CtrlmateEntity, ButtonEntity):
-    """Remote OS action or allowlisted user script button."""
-
-    async def async_press(self) -> None:
-        await self.coordinator.async_send_command(
-            {"action": "press_button", "entity_id": self.key}
-        )

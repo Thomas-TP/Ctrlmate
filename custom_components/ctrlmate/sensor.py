@@ -1,10 +1,11 @@
-"""Sensor platform for Ctrlmate (native HA °C / °F conversion via SensorDeviceClass.TEMPERATURE)."""
+"""Sensor platform for Ctrlmate."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from homeassistant.components.sensor import (
+    DEVICE_CLASS_UNITS,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -15,22 +16,29 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import CtrlmateConfigEntry
 from .coordinator import CtrlmateCoordinator
-from .entity import CtrlmateEntity
+from .entity import CtrlmateEntity, async_setup_manifest_platform, update_pending_count
+import contextlib
 
-DEVICE_CLASS_MAP: dict[str, SensorDeviceClass] = {
-    "temperature": SensorDeviceClass.TEMPERATURE,
-    "power": SensorDeviceClass.POWER,
-    "frequency": SensorDeviceClass.FREQUENCY,
-    "data_size": SensorDeviceClass.DATA_SIZE,
-    "voltage": SensorDeviceClass.VOLTAGE,
-    "duration": SensorDeviceClass.DURATION,
+PARALLEL_UPDATES = 0
+
+PENDING_UPDATES_DESCRIPTOR: dict[str, Any] = {
+    "id": "os_pending_updates",
+    "name": "Pending OS updates",
+    "platform": "sensor",
+    "state_class": "measurement",
+    "entity_category": "diagnostic",
+    "suggested_display_precision": 0,
 }
 
-STATE_CLASS_MAP: dict[str, SensorStateClass] = {
-    "measurement": SensorStateClass.MEASUREMENT,
-    "total": SensorStateClass.TOTAL,
-    "total_increasing": SensorStateClass.TOTAL_INCREASING,
-}
+
+def _extra(coordinator: CtrlmateCoordinator) -> list[dict[str, Any]]:
+    """The pending-update count is derived from the ``os_updates`` state."""
+    if (
+        "os_updates" in coordinator.descriptors
+        and "os_pending_updates" not in coordinator.descriptors
+    ):
+        return [PENDING_UPDATES_DESCRIPTOR]
+    return []
 
 
 async def async_setup_entry(
@@ -38,44 +46,53 @@ async def async_setup_entry(
     entry: CtrlmateConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    added: set[str] = set()
-
-    def _sync_entities() -> None:
-        new_entities = []
-        for desc in coordinator.manifest.get("entities", []):
-            if desc.get("platform") != "sensor" or not desc.get("exposed", True):
-                continue
-            eid = desc["id"]
-            if eid not in added:
-                added.add(eid)
-                new_entities.append(CtrlmateSensor(coordinator, desc))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.add_manifest_listener(_sync_entities))
+    async_setup_manifest_platform(hass, entry, async_add_entities, "sensor", CtrlmateSensor, _extra)
 
 
 class CtrlmateSensor(CtrlmateEntity, SensorEntity):
-    """Numeric or text telemetry sensor from Ctrlmate."""
+    """Telemetry sensor; a missing reading is unavailable, never zero."""
 
     def __init__(self, coordinator: CtrlmateCoordinator, descriptor: dict[str, Any]) -> None:
         super().__init__(coordinator, descriptor)
-        dc = descriptor.get("device_class")
-        if dc in DEVICE_CLASS_MAP:
-            self._attr_device_class = DEVICE_CLASS_MAP[dc]
-        sc = descriptor.get("state_class")
-        if sc in STATE_CLASS_MAP:
-            self._attr_state_class = STATE_CLASS_MAP[sc]
         unit = descriptor.get("unit_of_measurement")
-        if dc == "temperature":
-            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        elif unit:
+        device_class: SensorDeviceClass | None = None
+        if raw := descriptor.get("device_class"):
+            try:
+                device_class = SensorDeviceClass(raw)
+            except ValueError:
+                device_class = None
+        if device_class == SensorDeviceClass.TEMPERATURE:
+            unit = UnitOfTemperature.CELSIUS
+        allowed = DEVICE_CLASS_UNITS.get(device_class) if device_class else None
+        if device_class is not None and allowed is not None and unit not in allowed:
+            device_class = None  # never register a unit HA would reject
+        if device_class is not None:
+            self._attr_device_class = device_class
+        if unit:
             self._attr_native_unit_of_measurement = unit
-        if (prec := descriptor.get("suggested_display_precision")) is not None:
-            self._attr_suggested_display_precision = int(prec)
+
+        state_class = descriptor.get("state_class")
+        if state_class and (unit or device_class):
+            with contextlib.suppress(ValueError):
+                self._attr_state_class = SensorStateClass(state_class)
+        if (precision := descriptor.get("suggested_display_precision")) is not None:
+            self._attr_suggested_display_precision = int(precision)
+
+    def _raw_state(self) -> dict[str, Any] | None:
+        if self.key == "os_pending_updates":
+            return self.coordinator.data.get("os_updates")
+        return super()._raw_state()
+
+    @property
+    def available(self) -> bool:
+        if self.key == "os_pending_updates":
+            value = self._raw_value()
+            return self.coordinator.connected and isinstance(value, dict) and not value.get("error")
+        return super().available
 
     @property
     def native_value(self) -> Any:
-        return self._raw_value()
+        value = self._raw_value()
+        if self.key == "os_pending_updates":
+            return update_pending_count(value) if isinstance(value, dict) else None
+        return value

@@ -1,28 +1,59 @@
 # Maintainer: Ctrlmate Contributors
+#
+# pkgver is kept in sync with the workspace version by scripts/sync_version.py.
+# After changing pkgver run `updpkgsums` (pacman-contrib) to replace the checksum, then
+# `makepkg --printsrcinfo > .SRCINFO`. Release CI refuses a PKGBUILD whose sha256sums is 'SKIP'.
 pkgname=ctrlmate
-pkgver=0.5.0
+_repo=Ctrlmate
+pkgver=0.6.0
 pkgrel=1
-pkgdesc="Modern PC telemetry, lighting, cooling and system control daemon & desktop app for Home Assistant"
+pkgdesc="PC telemetry, lighting, cooling and Home Assistant control (daemon, session agent, desktop app)"
 arch=('x86_64' 'aarch64')
 url="https://github.com/Thomas-TP/Ctrlmate"
 license=('AGPL-3.0-or-later')
-depends=('gtk3' 'webkit2gtk-4.1' 'hidapi' 'libpipewire' 'systemd')
-makedepends=('cargo' 'bun')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+depends=('gtk3' 'webkit2gtk-4.1' 'hidapi' 'systemd-libs' 'libayatana-appindicator')
+makedepends=('cargo' 'bun' 'pkgconf' 'git')
+optdepends=('i2c-tools: inspect SMBus buses for DRAM RGB'
+            'openrgb: fallback lighting backend for unsupported devices')
+install=ctrlmate.install
+source=("$_repo-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# Placeholder until the release tag exists; run `updpkgsums`.
 sha256sums=('SKIP')
 
+prepare() {
+  cd "$srcdir/$_repo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+  (cd apps/desktop && bun install --frozen-lockfile)
+}
+
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
-  bun install --cwd apps/desktop --frozen-lockfile
-  bun run --cwd apps/desktop build
-  cargo build --release -p ctrlmate-daemon -p ctrlmate-desktop
+  cd "$srcdir/$_repo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  (cd apps/desktop && bun run build)
+  cargo build --frozen --release -p ctrlmate-daemon -p ctrlmate-agent -p ctrlmate-desktop
+}
+
+check() {
+  cd "$srcdir/$_repo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --workspace
 }
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
-  install -Dm755 target/release/ctrlmated "$pkgdir/usr/bin/ctrlmated"
-  install -Dm755 target/release/ctrlmate-desktop "$pkgdir/usr/bin/ctrlmate-desktop"
+  cd "$srcdir/$_repo-$pkgver"
+  local b
+  for b in ctrlmated ctrlmate-agent ctrlmate-desktop; do
+    install -Dm755 "target/release/$b" "$pkgdir/usr/bin/$b"
+  done
   install -Dm644 packaging/linux/ctrlmated.service "$pkgdir/usr/lib/systemd/system/ctrlmated.service"
+  install -Dm644 packaging/linux/ctrlmate-agent.service "$pkgdir/usr/lib/systemd/user/ctrlmate-agent.service"
   install -Dm644 packaging/linux/99-ctrlmate.rules "$pkgdir/usr/lib/udev/rules.d/99-ctrlmate.rules"
+  install -Dm644 packaging/linux/ctrlmate-i2c.conf "$pkgdir/usr/lib/modules-load.d/ctrlmate-i2c.conf"
+  install -Dm644 packaging/linux/ctrlmate.sysusers "$pkgdir/usr/lib/sysusers.d/ctrlmate.conf"
+  install -Dm644 packaging/linux/ctrlmate.desktop "$pkgdir/usr/share/applications/ctrlmate.desktop"
+  install -Dm644 packaging/linux/ctrlmate-agent.desktop "$pkgdir/etc/xdg/autostart/ctrlmate-agent.desktop"
+  install -Dm644 apps/desktop/src-tauri/icons/icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/ctrlmate.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

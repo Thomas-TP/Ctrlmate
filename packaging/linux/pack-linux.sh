@@ -1,124 +1,167 @@
 #!/usr/bin/env bash
+# Build Ctrlmate Linux packages from ALREADY BUILT release binaries (target/release):
+#   deb, rpm, and (optionally) a Velopack AppImage.
+#
+#   packaging/linux/pack-linux.sh [--arch x86_64|aarch64] [--out DIR] [--version X.Y.Z]
+#                                 [--formats deb,rpm,appimage] [--build]
+#
+# The version comes from [workspace.package].version (scripts/sync_version.py --print).
+# Output is reproducible: mtimes and archive metadata are clamped to the last commit time
+# (SOURCE_DATE_EPOCH). Required tools: python3, dpkg-deb (deb), rpmbuild (rpm), vpk (appimage).
 set -euo pipefail
 
-VERSION="${1:-0.4.0}"
-OUT_DIR="${2:-dist-velopack/linux}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$REPO_ROOT"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"
 
-STAGE_DIR="$REPO_ROOT/dist-stage/linux-x64"
-rm -rf "$STAGE_DIR"
-mkdir -p "$STAGE_DIR" "$OUT_DIR"
+ARCH="$(uname -m)"
+OUT="$ROOT/dist-release/linux"
+VERSION=""
+FORMATS="deb,rpm"
+BUILD=0
 
-cp target/release/ctrlmate-desktop "$STAGE_DIR/"
-cp target/release/ctrlmated "$STAGE_DIR/"
-cp LICENSE "$STAGE_DIR/"
-chmod +x "$STAGE_DIR/ctrlmate-desktop" "$STAGE_DIR/ctrlmated"
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --arch) ARCH="$2"; shift 2 ;;
+    --out) OUT="$2"; shift 2 ;;
+    --version) VERSION="$2"; shift 2 ;;
+    --formats) FORMATS="$2"; shift 2 ;;
+    --build) BUILD=1; shift ;;
+    -h | --help) sed -n '2,12p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
 
-# 1. Velopack Linux AppImage + delta feed (releases.linux.json)
-vpk "[linux]" pack \
-  --packId Ctrlmate \
-  --packVersion "$VERSION" \
-  --packTitle "Ctrlmate" \
-  --packAuthors "Ctrlmate Contributors" \
-  --packDir "$STAGE_DIR" \
-  --mainExe ctrlmate-desktop \
-  --runtime linux-x64 \
-  --icon apps/desktop/src-tauri/icons/icon.png \
-  --outputDir "$OUT_DIR" \
-  --channel linux
+WS_VERSION="$(python3 scripts/sync_version.py --print)"
+VERSION="${VERSION:-$WS_VERSION}"
+if [ "$VERSION" != "$WS_VERSION" ]; then
+    echo "error: --version $VERSION differs from workspace version $WS_VERSION" >&2
+    exit 1
+fi
 
-# 2. Native .deb package (Debian / Ubuntu / Mint / Pop!_OS)
-DEB_ROOT="$REPO_ROOT/dist-stage/deb"
-rm -rf "$DEB_ROOT"
-mkdir -p \
-  "$DEB_ROOT/DEBIAN" \
-  "$DEB_ROOT/usr/bin" \
-  "$DEB_ROOT/usr/lib/systemd/system" \
-  "$DEB_ROOT/usr/lib/udev/rules.d" \
-  "$DEB_ROOT/usr/share/applications" \
-  "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps" \
-  "$DEB_ROOT/usr/share/licenses/ctrlmate"
+case "$ARCH" in
+x86_64 | amd64) ARCH=x86_64; DEB_ARCH=amd64; RUNTIME=linux-x64; CHANNEL=linux ;;
+aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64; RUNTIME=linux-arm64; CHANNEL=linux-arm64 ;;
+*) echo "unsupported architecture: $ARCH (supported: x86_64, aarch64)" >&2; exit 2 ;;
+esac
+if [ "$(uname -m)" != "$ARCH" ]; then
+    echo "error: binaries in target/release are built for $(uname -m); build on a $ARCH host" >&2
+    exit 1
+fi
 
-cp target/release/ctrlmate-desktop "$DEB_ROOT/usr/bin/ctrlmate-desktop"
-cp target/release/ctrlmated "$DEB_ROOT/usr/bin/ctrlmated"
-cp packaging/linux/ctrlmated.service "$DEB_ROOT/usr/lib/systemd/system/ctrlmated.service"
-cp packaging/linux/99-ctrlmate.rules "$DEB_ROOT/usr/lib/udev/rules.d/99-ctrlmate.rules"
-cp apps/desktop/src-tauri/icons/icon.png "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps/ctrlmate.png"
-cp LICENSE "$DEB_ROOT/usr/share/licenses/ctrlmate/LICENSE"
+if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || date +%s)"
+fi
+export SOURCE_DATE_EPOCH
 
-cat > "$DEB_ROOT/usr/share/applications/ctrlmate.desktop" <<'EOF'
-[Desktop Entry]
-Name=Ctrlmate
-Comment=Modern PC telemetry, lighting, cooling and Home Assistant control
-Exec=/usr/bin/ctrlmate-desktop
-Icon=ctrlmate
-Terminal=false
-Type=Application
-Categories=System;Utility;
-EOF
+if [ "$BUILD" = 1 ]; then
+    (cd apps/desktop && bun install --frozen-lockfile && bun run build)
+    cargo build --release --locked -p ctrlmate-daemon -p ctrlmate-agent -p ctrlmate-desktop
+fi
 
-cat > "$DEB_ROOT/DEBIAN/control" <<EOF
+BINS=(ctrlmated ctrlmate-agent ctrlmate-desktop)
+for b in "${BINS[@]}"; do
+    [ -x "target/release/$b" ] || { echo "error: target/release/$b missing (cargo build --release --locked, or pass --build)" >&2; exit 1; }
+done
+
+mkdir -p "$OUT"
+STAGE="$ROOT/dist-stage/linux-$ARCH"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+
+# Install the common file tree into a root. Used by the deb and as the reference for the rpm/PKGBUILD.
+install_tree() {
+    local d="$1"
+    install -d "$d"
+    for b in "${BINS[@]}"; do install -Dm755 "target/release/$b" "$d/usr/bin/$b"; done
+    install -Dm644 packaging/linux/ctrlmated.service "$d/usr/lib/systemd/system/ctrlmated.service"
+    install -Dm644 packaging/linux/ctrlmate-agent.service "$d/usr/lib/systemd/user/ctrlmate-agent.service"
+    install -Dm644 packaging/linux/99-ctrlmate.rules "$d/usr/lib/udev/rules.d/99-ctrlmate.rules"
+    install -Dm644 packaging/linux/ctrlmate-i2c.conf "$d/usr/lib/modules-load.d/ctrlmate-i2c.conf"
+    install -Dm644 packaging/linux/ctrlmate.desktop "$d/usr/share/applications/ctrlmate.desktop"
+    install -Dm644 packaging/linux/ctrlmate-agent.desktop "$d/etc/xdg/autostart/ctrlmate-agent.desktop"
+    install -Dm644 apps/desktop/src-tauri/icons/icon.png "$d/usr/share/icons/hicolor/256x256/apps/ctrlmate.png"
+    install -Dm644 LICENSE "$d/usr/share/doc/ctrlmate/copyright"
+    install -Dm644 LICENSE "$d/usr/share/licenses/ctrlmate/LICENSE"
+}
+
+# ---- deb -------------------------------------------------------------------------------------
+build_deb() {
+    command -v dpkg-deb >/dev/null || { echo "error: dpkg-deb not found" >&2; exit 1; }
+    local d="$STAGE/deb"
+    install_tree "$d"
+    mkdir -p "$d/DEBIAN"
+    local size
+    size="$(du -sk --exclude=DEBIAN "$d" | cut -f1)"
+    cat > "$d/DEBIAN/control" <<EOF
 Package: ctrlmate
 Version: ${VERSION}
 Section: utils
 Priority: optional
-Architecture: amd64
-Depends: libgtk-3-0, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libhidapi-hidraw0
-Maintainer: Ctrlmate Contributors <https://github.com/Thomas-TP/Ctrlmate>
-Description: Modern PC telemetry, lighting, cooling and system control for Home Assistant 2026.11
+Architecture: ${DEB_ARCH}
+Installed-Size: ${size}
+Depends: libc6, libgtk-3-0, libwebkit2gtk-4.1-0, libsoup-3.0-0, libayatana-appindicator3-1 | libappindicator3-1, libudev1, libhidapi-hidraw0, adduser, systemd
+Recommends: i2c-tools
+Maintainer: Ctrlmate Contributors <noreply@github.com>
+Homepage: https://github.com/Thomas-TP/Ctrlmate
+Description: PC telemetry, lighting, cooling and Home Assistant control
+ Ctrlmate: hardware telemetry, cooling policy with a safety watchdog, RGB and
+ Kelvin lighting and a Home Assistant integration. Ships the ctrlmated system
+ daemon (unprivileged "ctrlmate" user), the ctrlmate-agent session agent and the
+ desktop application.
 EOF
+    echo "/etc/xdg/autostart/ctrlmate-agent.desktop" > "$d/DEBIAN/conffiles"
+    for s in postinst prerm postrm; do install -m755 "packaging/linux/debian/$s" "$d/DEBIAN/$s"; done
+    find "$d" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    dpkg-deb -Zxz --root-owner-group --build "$d" "$OUT/ctrlmate_${VERSION}_${DEB_ARCH}.deb"
+}
 
-cat > "$DEB_ROOT/DEBIAN/postinst" <<'EOF'
-#!/bin/sh
-set -e
-if command -v udevadm >/dev/null 2>&1; then
-  udevadm control --reload-rules || true
-  udevadm trigger || true
-fi
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl daemon-reload || true
-  systemctl enable --now ctrlmated.service || true
-fi
-EOF
-chmod 755 "$DEB_ROOT/DEBIAN/postinst"
+# ---- rpm -------------------------------------------------------------------------------------
+build_rpm() {
+    command -v rpmbuild >/dev/null || { echo "error: rpmbuild not found" >&2; exit 1; }
+    local top="$STAGE/rpmbuild"
+    mkdir -p "$top"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+    sed -e "s|@VERSION@|${VERSION}|g" -e "s|@ROOT@|${ROOT}|g" \
+        packaging/linux/ctrlmate.spec.in > "$top/SPECS/ctrlmate.spec"
+    rpmbuild -bb --target "${ARCH}-linux" \
+        --define "_topdir $top" \
+        --define "_buildhost reproducible" \
+        --define "_binary_payload w19.xzdio" \
+        "$top/SPECS/ctrlmate.spec"
+    cp "$top"/RPMS/*/ctrlmate-*.rpm "$OUT/"
+}
 
-dpkg-deb --build --root-owner-group "$DEB_ROOT" "$OUT_DIR/ctrlmate_${VERSION}_amd64.deb"
+# ---- AppImage (Velopack) ---------------------------------------------------------------------
+# The AppImage bundles the desktop app, the agent and the daemon, with Velopack delta updates.
+# It does NOT install the system service, udev rules or the ctrlmate user: use the deb/rpm/AUR
+# package (or run the daemon as your user) for hardware access.
+build_appimage() {
+    command -v vpk >/dev/null || { echo "error: vpk not found (dotnet tool install -g vpk)" >&2; exit 1; }
+    local d="$STAGE/appimage"
+    mkdir -p "$d"
+    for b in "${BINS[@]}"; do install -m755 "target/release/$b" "$d/$b"; done
+    install -m644 LICENSE "$d/LICENSE"
+    vpk "[linux]" pack \
+        --packId Ctrlmate \
+        --packVersion "$VERSION" \
+        --packTitle "Ctrlmate" \
+        --packAuthors "Ctrlmate Contributors" \
+        --packDir "$d" \
+        --mainExe ctrlmate-desktop \
+        --runtime "$RUNTIME" \
+        --icon apps/desktop/src-tauri/icons/icon.png \
+        --outputDir "$OUT" \
+        --channel "$CHANNEL"
+}
 
-# 3. Native .rpm package (Fedora / RHEL / openSUSE) when fpm or rpmbuild is available
-if command -v rpmbuild >/dev/null 2>&1; then
-  RPM_TOP="$REPO_ROOT/dist-stage/rpmbuild"
-  mkdir -p "$RPM_TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-  cat > "$RPM_TOP/SPECS/ctrlmate.spec" <<EOF
-Name:           ctrlmate
-Version:        ${VERSION}
-Release:        1%{?dist}
-Summary:        Modern PC telemetry, lighting, cooling and Home Assistant 2026.11 suite
-License:        AGPL-3.0-or-later
-URL:            https://github.com/Thomas-TP/Ctrlmate
+IFS=',' read -ra FMT <<< "$FORMATS"
+for f in "${FMT[@]}"; do
+    case "$f" in
+    deb) build_deb ;;
+    rpm) build_rpm ;;
+    appimage) build_appimage ;;
+    *) echo "unknown format: $f" >&2; exit 2 ;;
+    esac
+done
 
-%description
-Open-source cross-platform PC telemetry, lighting (RGB & Kelvin), cooling and OS control for Home Assistant 2026.11.
-
-%install
-mkdir -p %{buildroot}/usr/bin %{buildroot}/usr/lib/systemd/system %{buildroot}/usr/lib/udev/rules.d %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/256x256/apps
-install -m 755 $REPO_ROOT/target/release/ctrlmate-desktop %{buildroot}/usr/bin/ctrlmate-desktop
-install -m 755 $REPO_ROOT/target/release/ctrlmated %{buildroot}/usr/bin/ctrlmated
-install -m 644 $REPO_ROOT/packaging/linux/ctrlmated.service %{buildroot}/usr/lib/systemd/system/ctrlmated.service
-install -m 644 $REPO_ROOT/packaging/linux/99-ctrlmate.rules %{buildroot}/usr/lib/udev/rules.d/99-ctrlmate.rules
-install -m 644 $DEB_ROOT/usr/share/applications/ctrlmate.desktop %{buildroot}/usr/share/applications/ctrlmate.desktop
-install -m 644 $REPO_ROOT/apps/desktop/src-tauri/icons/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/ctrlmate.png
-
-%files
-/usr/bin/ctrlmate-desktop
-/usr/bin/ctrlmated
-/usr/lib/systemd/system/ctrlmated.service
-/usr/lib/udev/rules.d/99-ctrlmate.rules
-/usr/share/applications/ctrlmate.desktop
-/usr/share/icons/hicolor/256x256/apps/ctrlmate.png
-EOF
-  rpmbuild --define "_topdir $RPM_TOP" -bb "$RPM_TOP/SPECS/ctrlmate.spec"
-  cp "$RPM_TOP"/RPMS/*/*.rpm "$OUT_DIR/"
-fi
-
-ls -lh "$OUT_DIR"
+echo "Ctrlmate $VERSION ($ARCH) packages in $OUT:"
+ls -l "$OUT"

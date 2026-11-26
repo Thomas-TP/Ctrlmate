@@ -6,29 +6,29 @@ members = [
     "crates/ctrlmate-cooling",
     "crates/ctrlmate-hal",
     "crates/ctrlmate-daemon",
+    "crates/ctrlmate-agent",
     "apps/desktop/src-tauri",
 ]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.88"
 license = "AGPL-3.0-or-later"
+# Internal crates are never published to crates.io (this also makes cargo-deny treat path deps as private).
+publish = false
 authors = ["Ctrlmate Contributors"]
 repository = "https://github.com/Thomas-TP/Ctrlmate"
-homepage = "https://github.com/Thomas-TP/Ctrlmate"
 
 [workspace.dependencies]
 anyhow = "1.0"
 axum = { version = "0.8", features = ["ws", "json"] }
-base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 directories = "6.0"
 futures-util = "0.3"
 hex = "0.4"
 hidapi = "2.6"
-hmac = "0.12"
 hyper = { version = "1.6", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 mdns-sd = "0.13"
@@ -41,19 +41,23 @@ serde_json = "1.0"
 sha2 = "0.10"
 subtle = "2.6"
 sysinfo = "0.35"
+tempfile = "3.20"
 thiserror = "2.0"
 tokio = { version = "1.45", features = ["full"] }
 tokio-rustls = "0.26"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.16", features = ["v4", "serde"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
+unused_must_use = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

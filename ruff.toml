@@ -1,0 +1,8 @@
+# Lint/format scope: the Home Assistant integration and its tests only.
+target-version = "py313"
+line-length = 100
+include = ["custom_components/**/*.py", "tests/**/*.py"]
+
+[lint]
+select = ["E", "F", "W", "UP", "B", "ASYNC", "SIM", "RUF"]
+ignore = ["E501", "RUF012"]

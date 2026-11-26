@@ -1,0 +1,40 @@
+# cargo-audit configuration. Mirrors the advisory ignores in deny.toml, which carries the reasons;
+# every entry was approved by the maintainer.
+#
+# zip 8.x: transitive dependency of velopack 1.2 (self-update). ZipArchive::extract is never called
+# on untrusted input; update packages come from this project's own GitHub releases.
+# RUSTSEC-2026-0543: chrono unmaintained notice with no safe upgrade; replace with the time crate.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+  "RUSTSEC-2026-0545",
+  "RUSTSEC-2026-0546",
+  "RUSTSEC-2026-0547",
+  "RUSTSEC-2026-0548",
+  "RUSTSEC-2026-0543",
+  # rustls-webpki 0.102.8, pinned by rumqttc 0.25.1 (only an error type; verification uses 0.103).
+  "RUSTSEC-2026-0049",
+  "RUSTSEC-2026-0098",
+  "RUSTSEC-2026-0099",
+  "RUSTSEC-2026-0104",
+  "RUSTSEC-2026-0382",
+  # Unmaintained / unsound notices on transitive dependencies, approved by the maintainer. None is a
+  # vulnerability in code Ctrlmate calls and none can be fixed from this repository; revisit when the
+  # named parent releases an update.
+  # derivative 2.2.0 (proc-macro, build time only): velopack 1.2.
+  "RUSTSEC-2024-0388",
+  # proc-macro-error 1.0.4 (proc-macro, build time only) and glib 0.18.5: the GTK3 stack behind
+  # tauri / tray-icon on Linux. glib's VariantStrIter unsoundness is in an API Ctrlmate never calls.
+  "RUSTSEC-2024-0370",
+  "RUSTSEC-2024-0429",
+  # rustls-pemfile 2.2.0: rumqttc 0.25 (MQTT TLS).
+  "RUSTSEC-2025-0134",
+  # zbus_names / zvariant / zvariant_derive: zbus 5, used for PackageKit (ctrlmate-hal) and by
+  # tauri-plugin-single-instance.
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0372",
+]

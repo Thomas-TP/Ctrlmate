@@ -1,219 +1,158 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Activity,
-  Cpu,
-  Fan,
-  Home,
-  Lock,
-  MonitorOff,
-  Moon,
-  RefreshCw,
-  Search,
-  Sliders,
-  Sun,
-  VolumeX,
-} from 'lucide-react';
-import type { CoolingPreset } from '../types';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Search } from 'lucide-react';
+import { useI18n } from '../i18n';
+import { useNav } from '../store/nav';
+import { useCommands, type CommandGroup, type PaletteCommand } from './commands';
+import { useModalBehavior } from './ui/Dialog';
+import { Kbd } from './ui/Layout';
+import { cn } from './ui/Button';
 
-export type NavTab = 'overview' | 'hardware' | 'cooling' | 'lighting' | 'system' | 'homeassistant';
+const GROUP_ORDER: CommandGroup[] = ['navigate', 'cooling', 'appearance', 'actions', 'app'];
 
-export interface PaletteAction {
-  id: string;
-  group: string;
-  label: string;
-  hint?: string;
-  icon: typeof Activity;
-  run: () => void | Promise<void>;
+/** Case- and accent-insensitive match on label + keywords. */
+export function matches(cmd: Pick<PaletteCommand, 'label' | 'keywords'>, query: string): boolean {
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const hay = norm(`${cmd.label} ${cmd.keywords ?? ''}`);
+  return norm(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => hay.includes(w));
 }
 
-export function CommandPalette({
-  open,
-  onClose,
-  onNavigate,
-  onToggleLights,
-  onKelvinPreset,
-  onCoolingPreset,
-  onToggleMute,
-  onRescan,
-  onLock,
-  onDisplayOff,
-  onToggleTheme,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onNavigate: (tab: NavTab) => void;
-  onToggleLights: () => void;
-  onKelvinPreset: (k: number) => void;
-  onCoolingPreset: (preset: CoolingPreset) => void;
-  onToggleMute: () => void;
-  onRescan: () => void;
-  onLock: () => void;
-  onDisplayOff: () => void;
-  onToggleTheme: () => void;
-}) {
+function Palette({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const commands = useCommands();
   const [query, setQuery] = useState('');
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [active, setActive] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const listId = useId();
+  useModalBehavior(true, root, onClose, input);
 
-  const actions = useMemo<PaletteAction[]>(
-    () => [
-      { id: 'nav-overview', group: 'Navigation', label: 'Tableau de bord', hint: '1', icon: Activity, run: () => onNavigate('overview') },
-      { id: 'nav-hardware', group: 'Navigation', label: 'Matériel & capteurs', hint: '2', icon: Cpu, run: () => onNavigate('hardware') },
-      { id: 'nav-cooling', group: 'Navigation', label: 'Refroidissement & courbes', hint: '3', icon: Fan, run: () => onNavigate('cooling') },
-      { id: 'nav-lighting', group: 'Navigation', label: 'Éclairage RGB & Kelvin', hint: '4', icon: Sun, run: () => onNavigate('lighting') },
-      { id: 'nav-system', group: 'Navigation', label: 'Système, Audio & Mises à jour', hint: '5', icon: Sliders, run: () => onNavigate('system') },
-      { id: 'nav-ha', group: 'Navigation', label: 'Home Assistant & MQTT', hint: '6', icon: Home, run: () => onNavigate('homeassistant') },
-
-      { id: 'light-toggle', group: 'Éclairage', label: 'Allumer / Éteindre les LEDs du PC', icon: Sun, run: onToggleLights },
-      { id: 'light-2700', group: 'Éclairage', label: 'Ambiance Détente · 2700K (Blanc chaud)', icon: Sun, run: () => onKelvinPreset(2700) },
-      { id: 'light-4000', group: 'Éclairage', label: 'Ambiance Neutre · 4000K', icon: Sun, run: () => onKelvinPreset(4000) },
-      { id: 'light-6500', group: 'Éclairage', label: 'Ambiance Jour · 6500K', icon: Sun, run: () => onKelvinPreset(6500) },
-
-      { id: 'cool-auto', group: 'Refroidissement', label: 'Mode Auto (courbe native)', icon: Fan, run: () => onCoolingPreset('auto') },
-      { id: 'cool-silent', group: 'Refroidissement', label: 'Mode Silencieux', icon: Fan, run: () => onCoolingPreset('silent') },
-      { id: 'cool-balanced', group: 'Refroidissement', label: 'Mode Équilibré', icon: Fan, run: () => onCoolingPreset('balanced') },
-      { id: 'cool-perf', group: 'Refroidissement', label: 'Mode Performance', icon: Fan, run: () => onCoolingPreset('performance') },
-      { id: 'cool-max', group: 'Refroidissement', label: 'Mode Maximum (100 %)', icon: Fan, run: () => onCoolingPreset('full_speed') },
-
-      { id: 'sys-mute', group: 'Actions rapides', label: 'Couper / Rétablir le son', icon: VolumeX, run: onToggleMute },
-      { id: 'sys-rescan', group: 'Actions rapides', label: 'Rescanner contrôleurs USB HID & RGB', icon: RefreshCw, run: onRescan },
-      { id: 'sys-lock', group: 'Actions rapides', label: 'Verrouiller la session', icon: Lock, run: onLock },
-      { id: 'sys-display', group: 'Actions rapides', label: 'Éteindre les écrans', icon: MonitorOff, run: onDisplayOff },
-      { id: 'sys-theme', group: 'Actions rapides', label: 'Basculer thème Clair / Sombre', icon: Moon, run: onToggleTheme },
-    ],
-    [
-      onNavigate,
-      onToggleLights,
-      onKelvinPreset,
-      onCoolingPreset,
-      onToggleMute,
-      onRescan,
-      onLock,
-      onDisplayOff,
-      onToggleTheme,
-    ],
+  const results = useMemo(
+    () =>
+      commands
+        .filter((c) => matches(c, query))
+        .sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group)),
+    [commands, query],
   );
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return actions;
-    return actions.filter(
-      (a) => a.label.toLowerCase().includes(q) || a.group.toLowerCase().includes(q),
-    );
-  }, [actions, query]);
+  const current = Math.min(active, Math.max(0, results.length - 1));
 
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setSelectedIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
-  }, [open]);
+    document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: 'nearest' });
+  }, [current, listId]);
 
-  useEffect(() => {
-    setSelectedIdx(0);
-  }, [query]);
-
-  if (!open) return null;
-
-  const execute = (action: PaletteAction | undefined) => {
-    if (!action) return;
+  const run = (c: PaletteCommand) => {
     onClose();
-    action.run();
+    void c.run();
   };
 
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((current + 1) % Math.max(1, results.length));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((current - 1 + results.length) % Math.max(1, results.length));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const c = results[current];
+      if (c) run(c);
+    }
+  };
+
+  let lastGroup: CommandGroup | null = null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-20 backdrop-blur-sm"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
+        ref={root}
         role="dialog"
         aria-modal="true"
-        aria-label="Palette de commandes rapides"
-        className="w-full max-w-lg overflow-hidden rounded-2xl bg-[var(--bg-elevated)] shadow-2xl ring-1 ring-black/15 dark:ring-white/[0.12]"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            onClose();
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setSelectedIdx((i) => Math.min(filtered.length - 1, i + 1));
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setSelectedIdx((i) => Math.max(0, i - 1));
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            execute(filtered[selectedIdx]);
-          }
-        }}
+        aria-label={t('palette.title')}
+        className="cm-enter w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface shadow-xl"
       >
-        <div className="hairline-b flex items-center gap-2.5 px-4 py-3">
-          <Search className="h-4 w-4 text-[var(--text-muted)]" />
+        <div className="flex items-center gap-3 border-b border-line px-4">
+          <Search className="size-4 text-subtle" aria-hidden />
           <input
-            ref={inputRef}
+            ref={input}
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={results.length ? `${listId}-${current}` : undefined}
+            aria-label={t('palette.title')}
+            placeholder={t('palette.placeholder')}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher une vue, un mode de refroidissement, une ambiance…"
-            className="w-full bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:shadow-none focus:outline-none"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActive(0);
+            }}
+            onKeyDown={onKey}
+            className="h-12 w-full bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
           />
-          <kbd className="tabular rounded bg-black/[0.06] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] dark:bg-white/[0.08]">
-            ESC
-          </kbd>
+          <Kbd>Esc</Kbd>
         </div>
-
-        <div className="max-h-80 overflow-y-auto p-1.5">
-          {filtered.length === 0 ? (
-            <div className="py-8 text-center text-xs text-[var(--text-muted)]">
-              Aucune commande trouvée pour « {query} »
-            </div>
-          ) : (
-            filtered.map((item, idx) => {
-              const Icon = item.icon;
-              const active = idx === selectedIdx;
-              const prevGroup = idx > 0 ? filtered[idx - 1].group : null;
-              const showGroup = item.group !== prevGroup;
-
-              return (
-                <div key={item.id}>
-                  {showGroup && (
-                    <div className="px-2.5 pt-2.5 pb-1 text-[10px] font-medium tracking-[0.06em] text-[var(--text-muted)] uppercase">
-                      {item.group}
-                    </div>
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={t('palette.title')}
+          className="max-h-[50vh] overflow-auto p-2"
+        >
+          {results.length === 0 ? (
+            <li role="presentation" className="px-3 py-6 text-center text-sm text-muted">
+              {t('palette.empty')}
+            </li>
+          ) : null}
+          {results.map((c, i) => {
+            const header = c.group !== lastGroup;
+            lastGroup = c.group;
+            return (
+              <li key={c.id} role="presentation">
+                {header ? (
+                  <p className="px-3 pt-2 pb-1 text-xs font-medium text-subtle">
+                    {t(`palette.group.${c.group}`)}
+                  </p>
+                ) : null}
+                <div
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={i === current}
+                  onMouseMove={() => setActive(i)}
+                  onClick={() => run(c)}
+                  className={cn(
+                    'cursor-pointer rounded-control px-3 py-2 text-sm text-fg',
+                    i === current && 'bg-accent-soft',
                   )}
-                  <button
-                    type="button"
-                    onMouseEnter={() => setSelectedIdx(idx)}
-                    onClick={() => execute(item)}
-                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] transition ${
-                      active
-                        ? 'bg-neutral-900 text-white dark:bg-white/[0.1] dark:text-white'
-                        : 'text-[var(--text-secondary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                      <span>{item.label}</span>
-                    </span>
-                    {item.hint && (
-                      <kbd
-                        className={`tabular rounded px-1.5 py-0.5 text-[10px] ${
-                          active
-                            ? 'bg-white/15 text-white'
-                            : 'bg-black/[0.05] text-[var(--text-muted)] dark:bg-white/[0.06]'
-                        }`}
-                      >
-                        {item.hint}
-                      </kbd>
-                    )}
-                  </button>
+                >
+                  {c.label}
                 </div>
-              );
-            })
-          )}
-        </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );
+}
+
+/** Mounts the palette on demand and owns the global Ctrl/Cmd+K shortcut. */
+export function CommandPalette() {
+  const open = useNav((s) => s.paletteOpen);
+  const setOpen = useNav((s) => s.setPaletteOpen);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setOpen(!useNav.getState().paletteOpen);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setOpen]);
+  return open ? <Palette onClose={() => setOpen(false)} /> : null;
 }

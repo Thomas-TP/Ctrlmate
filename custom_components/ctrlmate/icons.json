@@ -1,0 +1,164 @@
+{
+  "entity": {
+    "sensor": {
+      "load": {
+        "default": "mdi:gauge"
+      },
+      "frequency": {
+        "default": "mdi:sine-wave"
+      },
+      "temperature": {
+        "default": "mdi:thermometer"
+      },
+      "power": {
+        "default": "mdi:flash"
+      },
+      "usage": {
+        "default": "mdi:memory"
+      },
+      "used": {
+        "default": "mdi:memory"
+      },
+      "vram_usage": {
+        "default": "mdi:expansion-card"
+      },
+      "fan_speed": {
+        "default": "mdi:fan"
+      },
+      "core_clock": {
+        "default": "mdi:speedometer"
+      },
+      "vrm_temperature": {
+        "default": "mdi:thermometer-lines"
+      },
+      "chipset_temperature": {
+        "default": "mdi:thermometer-lines"
+      },
+      "liquid_temperature": {
+        "default": "mdi:coolant-temperature"
+      },
+      "pump_speed": {
+        "default": "mdi:pump"
+      },
+      "pump_duty": {
+        "default": "mdi:pump"
+      },
+      "radiator_fan_speed": {
+        "default": "mdi:fan"
+      },
+      "radiator_fan_duty": {
+        "default": "mdi:fan"
+      },
+      "active_application": {
+        "default": "mdi:application"
+      },
+      "os_pending_updates": {
+        "default": "mdi:package-down"
+      }
+    },
+    "binary_sensor": {
+      "thermal_failsafe": {
+        "default": "mdi:thermometer-check",
+        "state": {
+          "on": "mdi:thermometer-alert"
+        }
+      },
+      "gaming_mode": {
+        "default": "mdi:controller-off",
+        "state": {
+          "on": "mdi:controller"
+        }
+      },
+      "reboot_required": {
+        "default": "mdi:restart",
+        "state": {
+          "on": "mdi:restart-alert"
+        }
+      },
+      "microphone_in_use": {
+        "default": "mdi:microphone-off",
+        "state": {
+          "on": "mdi:microphone"
+        }
+      },
+      "webcam_in_use": {
+        "default": "mdi:webcam-off",
+        "state": {
+          "on": "mdi:webcam"
+        }
+      }
+    },
+    "light": {
+      "pc_lighting": {
+        "default": "mdi:led-strip-variant"
+      },
+      "lighting": {
+        "default": "mdi:led-strip-variant"
+      }
+    },
+    "select": {
+      "cooling_preset": {
+        "default": "mdi:fan",
+        "state": {
+          "auto": "mdi:fan-auto",
+          "silent": "mdi:fan-minus",
+          "balanced": "mdi:fan",
+          "performance": "mdi:fan-plus",
+          "gaming": "mdi:controller"
+        }
+      },
+      "audio_output": {
+        "default": "mdi:speaker"
+      }
+    },
+    "number": {
+      "master_volume": {
+        "default": "mdi:volume-high"
+      }
+    },
+    "switch": {
+      "audio_mute": {
+        "default": "mdi:volume-high",
+        "state": {
+          "on": "mdi:volume-mute"
+        }
+      }
+    },
+    "button": {
+      "check_os_updates": {
+        "default": "mdi:update"
+      },
+      "power_shutdown": {
+        "default": "mdi:power"
+      },
+      "power_restart": {
+        "default": "mdi:restart"
+      },
+      "power_sleep": {
+        "default": "mdi:power-sleep"
+      },
+      "power_hibernate": {
+        "default": "mdi:snowflake"
+      },
+      "power_lock": {
+        "default": "mdi:lock"
+      },
+      "display_off": {
+        "default": "mdi:monitor-off"
+      },
+      "wake_on_lan": {
+        "default": "mdi:power-on"
+      }
+    },
+    "update": {
+      "os_updates": {
+        "default": "mdi:update"
+      }
+    },
+    "notify": {
+      "desktop_notify": {
+        "default": "mdi:message-badge-outline"
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# systemd --user unit for the session agent (lock, audio, notifications, foreground app, scripts).
+# Alternative to the XDG autostart entry shipped in /etc/xdg/autostart: use ONE of the two.
+#   systemctl --user enable --now ctrlmate-agent.service
+# The agent reads /var/lib/ctrlmate/ipc.token, so your user must be in the `ctrlmate` group.
+[Unit]
+Description=Ctrlmate session agent
+Documentation=https://github.com/Thomas-TP/Ctrlmate
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ctrlmate-agent
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=graphical-session.target

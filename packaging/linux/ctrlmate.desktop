@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ctrlmate
+GenericName=PC control
+Comment=PC telemetry, lighting, cooling and Home Assistant control
+Exec=/usr/bin/ctrlmate-desktop
+Icon=ctrlmate
+Terminal=false
+Categories=System;Monitor;HardwareSettings;
+Keywords=rgb;cooling;fan;home assistant;telemetry;
+StartupWMClass=ctrlmate-desktop

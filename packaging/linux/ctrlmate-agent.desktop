@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ctrlmate session agent
+Comment=Ctrlmate background agent (audio, lock, notifications, scripts)
+Exec=/usr/bin/ctrlmate-agent
+Icon=ctrlmate
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

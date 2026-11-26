@@ -1,18 +1,23 @@
+//! Persistent daemon configuration (`config.json` in the data dir, protected as a secret).
+
+use crate::datadir::{DataDir, Protection};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use ctrlmate_protocol::{
-    AllowlistedScript, MqttConfig, PollingProfile, RemotePermissions, SecurityMode, TemperatureUnit,
+    AllowlistedScript, CoolingPreset, MqttConfig, PollingProfile, RemotePermissions, SecurityMode,
+    TemperatureUnit, ThermalThresholds,
 };
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+pub const CONFIG_FILE: &str = "config.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredClient {
     pub client_id: String,
     pub client_name: String,
-    /// Hex-encoded SHA-256 digest of the issued bearer token (never stored in plaintext).
+    /// Hex SHA-256 of the issued bearer token. Tokens are 192 random bits, so a plain
+    /// SHA-256 is sufficient (no password-hashing KDF needed) and the plaintext is never stored.
     pub token_hash: String,
     pub paired_at: DateTime<Utc>,
 }
@@ -20,79 +25,131 @@ pub struct StoredClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
     pub device_id: String,
-    /// Hex-encoded 32-byte secret used for HMAC token signing.
-    pub signing_secret_hex: String,
     pub security_mode: SecurityMode,
     pub polling_profile: PollingProfile,
     pub temperature_unit: TemperatureUnit,
     pub permissions: RemotePermissions,
+    /// Requested cooling preset, restored on start.
+    #[serde(default)]
+    pub cooling_preset: CoolingPreset,
     #[serde(default)]
     pub paired_clients: Vec<StoredClient>,
     #[serde(default)]
     pub scripts: Vec<AllowlistedScript>,
     #[serde(default)]
     pub mqtt: MqttConfig,
+    /// Thermal watchdog thresholds (clamped; CPU critical 85-98 C, default 93).
+    #[serde(default)]
+    pub thermal: ThermalThresholds,
+    /// OS update scans include optional updates, drivers and feature upgrades.
+    #[serde(default)]
+    pub include_optional_updates: bool,
+    /// LibreHardwareMonitor control ids declared as chassis fans for the deep-hardware bridge.
+    #[serde(default)]
+    pub chassis_fan_ids: Vec<String>,
 }
 
 impl Default for DaemonConfig {
     fn default() -> Self {
-        let mut secret = [0u8; 32];
-        rand::rng().fill_bytes(&mut secret);
         Self {
             device_id: Uuid::new_v4().to_string(),
-            signing_secret_hex: hex::encode(secret),
             security_mode: SecurityMode::ZeroKernelSafe,
             polling_profile: PollingProfile::Intelligent,
             temperature_unit: TemperatureUnit::Celsius,
             permissions: RemotePermissions::default(),
+            cooling_preset: CoolingPreset::Auto,
             paired_clients: Vec::new(),
             scripts: Vec::new(),
             mqtt: MqttConfig::default(),
+            thermal: ThermalThresholds::default(),
+            include_optional_updates: false,
+            chassis_fan_ids: Vec::new(),
         }
     }
 }
 
 impl DaemonConfig {
-    pub fn resolve_data_dir(override_dir: Option<PathBuf>) -> Result<PathBuf> {
-        let dir = if let Some(custom) = override_dir {
-            custom
-        } else if let Some(proj) = directories::ProjectDirs::from("org", "ctrlmate", "Ctrlmate") {
-            proj.config_dir().to_path_buf()
-        } else {
-            PathBuf::from(".ctrlmate-data")
-        };
-
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create config dir {}", dir.display()))?;
-        Ok(dir)
-    }
-
-    pub fn load_or_create(data_dir: &Path) -> Result<Self> {
-        let path = data_dir.join("config.json");
+    /// Loads `config.json`, creating it with fresh defaults on first start. A file that exists
+    /// but does not parse is an error (never silently replaced: it holds the paired clients).
+    pub fn load_or_create(dd: &DataDir) -> Result<Self> {
+        dd.prepare()?;
+        let path = dd.file(CONFIG_FILE);
         if path.exists() {
             let raw = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed reading {}", path.display()))?;
-            let cfg: Self = serde_json::from_str(&raw)
+            let mut cfg: Self = serde_json::from_str(&raw)
                 .with_context(|| format!("failed parsing {}", path.display()))?;
+            cfg.thermal = ctrlmate_hal::sanitize_thresholds(cfg.thermal);
+            // Legacy files were written without protection.
+            let _ = dd.protect_existing(CONFIG_FILE, Protection::Secret);
             Ok(cfg)
         } else {
             let cfg = Self::default();
-            cfg.save(data_dir)?;
+            cfg.save(dd)?;
             Ok(cfg)
         }
     }
 
-    pub fn save(&self, data_dir: &Path) -> Result<()> {
-        let path = data_dir.join("config.json");
-        let tmp = data_dir.join("config.json.tmp");
+    pub fn save(&self, dd: &DataDir) -> Result<()> {
         let body = serde_json::to_string_pretty(self)?;
-        std::fs::write(&tmp, body)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+        dd.write_protected(CONFIG_FILE, body.as_bytes(), Protection::Secret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ctrlmate_protocol::DataDirKind;
+
+    fn dd(p: &std::path::Path) -> DataDir {
+        DataDir {
+            path: p.to_path_buf(),
+            kind: DataDirKind::Custom,
         }
-        std::fs::rename(&tmp, &path)?;
-        Ok(())
+    }
+
+    #[test]
+    fn create_save_load_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = dd(tmp.path());
+        let mut c = DaemonConfig::load_or_create(&d).unwrap();
+        c.cooling_preset = CoolingPreset::Gaming;
+        c.save(&d).unwrap();
+        let again = DaemonConfig::load_or_create(&d).unwrap();
+        assert_eq!(again.device_id, c.device_id);
+        assert_eq!(again.cooling_preset, CoolingPreset::Gaming);
+    }
+
+    #[test]
+    fn legacy_v05_config_loads_and_drops_signing_secret() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = dd(tmp.path());
+        let legacy = serde_json::json!({
+            "device_id": "abc",
+            "signing_secret_hex": "00".repeat(32),
+            "security_mode": "zero_kernel_safe",
+            "polling_profile": "intelligent",
+            "temperature_unit": "celsius",
+            "permissions": RemotePermissions::default(),
+            "paired_clients": [],
+        });
+        std::fs::write(d.file(CONFIG_FILE), legacy.to_string()).unwrap();
+        let c = DaemonConfig::load_or_create(&d).unwrap();
+        assert_eq!(c.device_id, "abc");
+        c.save(&d).unwrap();
+        let raw = std::fs::read_to_string(d.file(CONFIG_FILE)).unwrap();
+        assert!(!raw.contains("signing_secret"));
+    }
+
+    #[test]
+    fn corrupt_config_is_an_error_not_a_reset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = dd(tmp.path());
+        std::fs::write(d.file(CONFIG_FILE), "{ not json").unwrap();
+        assert!(DaemonConfig::load_or_create(&d).is_err());
+        assert_eq!(
+            std::fs::read_to_string(d.file(CONFIG_FILE)).unwrap(),
+            "{ not json"
+        );
     }
 }

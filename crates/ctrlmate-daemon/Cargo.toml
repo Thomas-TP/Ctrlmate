@@ -3,6 +3,7 @@ name = "ctrlmate-daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "ctrlmated"
@@ -11,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
-base64.workspace = true
 chrono.workspace = true
 clap.workspace = true
 ctrlmate-hal = { path = "../ctrlmate-hal" }
@@ -19,13 +19,12 @@ ctrlmate-protocol = { path = "../ctrlmate-protocol" }
 directories.workspace = true
 futures-util.workspace = true
 hex.workspace = true
-hmac.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 mdns-sd.workspace = true
 rand.workspace = true
 rcgen.workspace = true
-rumqttc = "0.24"
+rumqttc = "0.25"
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,13 +33,16 @@ subtle.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
 tower.workspace = true
-tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-service = "0.8"
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
 
 [lints]
 workspace = true

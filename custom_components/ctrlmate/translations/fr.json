@@ -3,27 +3,282 @@
     "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Connexion au PC Ctrlmate",
-        "description": "Saisissez l'adresse IP ou le nom d'hôte de l'ordinateur exécutant Ctrlmate.",
+        "title": "Connexion à un PC Ctrlmate",
+        "description": "Saisissez l'adresse de l'ordinateur qui exécute Ctrlmate. La découverte automatique le trouve normalement toute seule.",
         "data": {
-          "host": "Hôte / Adresse IP",
+          "host": "Hôte ou adresse IP",
           "port": "Port"
+        },
+        "data_description": {
+          "host": "Adresse IPv4, IPv6 ou nom d'hôte du PC.",
+          "port": "Port HTTPS de Ctrlmate (9487 par défaut)."
+        }
+      },
+      "confirm_fingerprint": {
+        "title": "Confirmer le certificat de {name}",
+        "description": "Ctrlmate sur {host} a présenté cette empreinte de certificat (SHA-256) :\n\n`{fingerprint}`\n\nOuvrez l'application Ctrlmate sur ce PC, allez sur la page Home Assistant et comparez avec l'empreinte affichée. Ne continuez que si elles sont identiques. Home Assistant refusera tout autre certificat par la suite.",
+        "data": {
+          "confirm": "Les empreintes sont identiques"
         }
       },
       "pair": {
         "title": "Appairage avec {name}",
-        "description": "Ouvrez Ctrlmate sur {name} ({host}), cliquez sur « Démarrer l'appairage » dans l'onglet Home Assistant, puis saisissez le code PIN à 6 chiffres.",
+        "description": "Dans l'application Ctrlmate sur {name} ({host}), ouvrez la page Home Assistant, cliquez sur Démarrer l'appairage et saisissez le code PIN à 6 chiffres affiché.",
         "data": {
-          "pin": "Code PIN à 6 chiffres"
+          "pin": "Code PIN d'appairage à 6 chiffres"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Réauthentifier {name}",
+        "description": "Home Assistant ne peut plus se connecter à Ctrlmate sur {host} : l'appairage a été révoqué ou le certificat a changé. Continuez pour appairer à nouveau avec un nouveau PIN."
+      },
+      "reconfigure": {
+        "title": "Modifier l'adresse du PC Ctrlmate",
+        "description": "Mettez à jour l'adresse à laquelle Home Assistant joint ce PC. L'appairage et le certificat épinglé sont conservés si le certificat est inchangé.",
+        "data": {
+          "host": "Hôte ou adresse IP",
+          "port": "Port"
         }
       }
     },
     "error": {
-      "cannot_connect": "Impossible de joindre Ctrlmate sur le réseau local.",
-      "invalid_pin": "Code PIN à 6 chiffres invalide ou expiré."
+      "cannot_connect": "Impossible de joindre Ctrlmate à cette adresse. Vérifiez que le PC est allumé, que Ctrlmate fonctionne et que le pare-feu autorise le port.",
+      "invalid_pin": "Le PIN est invalide ou expiré. Démarrez un nouvel appairage dans l'application.",
+      "too_many_attempts": "Trop de PIN erronés. Patientez un instant puis démarrez un nouvel appairage.",
+      "fingerprint_not_confirmed": "Confirmez que les empreintes sont identiques pour continuer.",
+      "wrong_device": "Cette adresse correspond à un autre PC que celui configuré."
     },
     "abort": {
-      "already_configured": "Ce PC Ctrlmate est déjà configuré."
+      "already_configured": "Ce PC Ctrlmate est déjà configuré.",
+      "cannot_connect": "Impossible de joindre Ctrlmate sur ce PC.",
+      "not_ctrlmate_device": "L'appareil découvert n'est pas un PC Ctrlmate valide.",
+      "fingerprint_mismatch": "Le certificat présenté par le PC ne correspond pas à l'empreinte annoncée ou épinglée. Rien n'a été appairé. Vérifiez que vous êtes sur un réseau de confiance et réessayez.",
+      "wrong_device": "Il s'agit d'un autre PC que celui qui a été appairé.",
+      "reauth_successful": "Réauthentification réussie.",
+      "reconfigure_successful": "L'adresse du PC Ctrlmate a été mise à jour."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wake-on-LAN",
+        "description": "Paramètres utilisés par le bouton Réveiller le PC.",
+        "data": {
+          "wol_broadcast_address": "Adresse de diffusion",
+          "wol_port": "Port UDP"
+        },
+        "data_description": {
+          "wol_broadcast_address": "Laissez vide pour utiliser l'adresse de diffusion du sous-réseau du PC.",
+          "wol_port": "Généralement 9 (ou 7)."
+        }
+      }
+    },
+    "error": {
+      "invalid_broadcast": "Saisissez une adresse de diffusion IPv4 valide."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "load": {
+        "name": "Charge"
+      },
+      "frequency": {
+        "name": "Fréquence"
+      },
+      "temperature": {
+        "name": "Température"
+      },
+      "power": {
+        "name": "Puissance"
+      },
+      "usage": {
+        "name": "Utilisation"
+      },
+      "used": {
+        "name": "Utilisé"
+      },
+      "vram_usage": {
+        "name": "Utilisation VRAM"
+      },
+      "fan_speed": {
+        "name": "Vitesse du ventilateur"
+      },
+      "core_clock": {
+        "name": "Fréquence du cœur"
+      },
+      "vrm_temperature": {
+        "name": "Température VRM"
+      },
+      "chipset_temperature": {
+        "name": "Température du chipset"
+      },
+      "liquid_temperature": {
+        "name": "Température du liquide"
+      },
+      "pump_speed": {
+        "name": "Vitesse de la pompe"
+      },
+      "pump_duty": {
+        "name": "Rapport cyclique de la pompe"
+      },
+      "radiator_fan_speed": {
+        "name": "Vitesse des ventilateurs du radiateur"
+      },
+      "radiator_fan_duty": {
+        "name": "Rapport cyclique des ventilateurs du radiateur"
+      },
+      "active_application": {
+        "name": "Application active"
+      },
+      "os_pending_updates": {
+        "name": "Mises à jour du système en attente"
+      }
+    },
+    "binary_sensor": {
+      "thermal_failsafe": {
+        "name": "Sécurité thermique"
+      },
+      "gaming_mode": {
+        "name": "Mode jeu"
+      },
+      "reboot_required": {
+        "name": "Redémarrage requis"
+      },
+      "microphone_in_use": {
+        "name": "Microphone utilisé"
+      },
+      "webcam_in_use": {
+        "name": "Webcam utilisée"
+      }
+    },
+    "light": {
+      "pc_lighting": {
+        "name": "Éclairage"
+      },
+      "lighting": {
+        "name": "Éclairage"
+      }
+    },
+    "select": {
+      "cooling_preset": {
+        "name": "Mode de refroidissement",
+        "state": {
+          "auto": "Automatique",
+          "silent": "Silencieux",
+          "balanced": "Équilibré",
+          "performance": "Performance",
+          "gaming": "Jeu"
+        }
+      },
+      "audio_output": {
+        "name": "Sortie audio"
+      }
+    },
+    "number": {
+      "master_volume": {
+        "name": "Volume principal"
+      }
+    },
+    "switch": {
+      "audio_mute": {
+        "name": "Sourdine audio"
+      }
+    },
+    "button": {
+      "check_os_updates": {
+        "name": "Rechercher les mises à jour du système"
+      },
+      "power_shutdown": {
+        "name": "Arrêter"
+      },
+      "power_restart": {
+        "name": "Redémarrer"
+      },
+      "power_sleep": {
+        "name": "Mettre en veille"
+      },
+      "power_hibernate": {
+        "name": "Mettre en veille prolongée"
+      },
+      "power_lock": {
+        "name": "Verrouiller la session"
+      },
+      "display_off": {
+        "name": "Éteindre les écrans"
+      },
+      "wake_on_lan": {
+        "name": "Réveiller le PC"
+      }
+    },
+    "update": {
+      "os_updates": {
+        "name": "Système d'exploitation"
+      }
+    },
+    "notify": {
+      "desktop_notify": {
+        "name": "Notification de bureau"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Ctrlmate a rejeté l'appairage enregistré. Réauthentifiez l'intégration."
+    },
+    "pc_offline": {
+      "message": "{name} est hors ligne."
+    },
+    "connection_lost": {
+      "message": "La connexion à {name} a été perdue avant la fin de la commande."
+    },
+    "command_timeout": {
+      "message": "{name} n'a pas répondu à temps."
+    },
+    "command_permission_denied": {
+      "message": "Cette action est désactivée dans les autorisations Ctrlmate de {name}."
+    },
+    "command_no_agent": {
+      "message": "L'agent Ctrlmate ne s'exécute pas dans la session utilisateur de {name} : cette action est impossible."
+    },
+    "command_agent_timeout": {
+      "message": "L'agent Ctrlmate sur {name} n'a pas répondu à temps."
+    },
+    "command_not_supported": {
+      "message": "{name} ne prend pas en charge cette action."
+    },
+    "command_invalid_argument": {
+      "message": "{name} a refusé la valeur : {message}"
+    },
+    "command_hardware_error": {
+      "message": "Le matériel de {name} a signalé une erreur : {message}"
+    },
+    "command_busy": {
+      "message": "{name} est occupé, réessayez dans un instant."
+    },
+    "command_unavailable": {
+      "message": "Cette fonction est actuellement indisponible sur {name}."
+    },
+    "command_internal": {
+      "message": "{name} a signalé une erreur interne : {message}"
+    },
+    "wol_no_mac": {
+      "message": "L'adresse MAC de {name} n'est pas encore connue. Connectez-le une fois pour qu'elle soit apprise."
+    },
+    "wol_invalid_address": {
+      "message": "L'adresse de diffusion Wake-on-LAN {address} n'est pas une adresse IPv4 valide."
+    },
+    "wol_failed": {
+      "message": "L'envoi du paquet Wake-on-LAN a échoué : {message}"
+    }
+  },
+  "issues": {
+    "no_agent": {
+      "title": "L'agent Ctrlmate ne fonctionne pas sur {name}",
+      "description": "{name} a refusé une action car l'agent Ctrlmate (la partie qui s'exécute dans la session de l'utilisateur connecté) n'est pas connecté. Le verrouillage, les écrans, le volume et les notifications en ont besoin. Ouvrez une session sur le PC et vérifiez que Ctrlmate Agent démarre à la connexion."
+    },
+    "service_outdated": {
+      "title": "Ctrlmate sur {name} est obsolète",
+      "description": "{name} exécute Ctrlmate {version} mais cette intégration nécessite au moins {required}. Certaines entités ou certains messages d'erreur peuvent manquer. Mettez à jour Ctrlmate sur le PC."
     }
   }
 }
