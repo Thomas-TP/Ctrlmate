@@ -25,7 +25,18 @@ updates:
     directory: /crates/ctrlmate-lhm-bridge
     schedule:
       interval: weekly
+    groups:
+      bridge-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # The System.* runtime packages must stay on the major of the project's target framework
+      # (net10.0-windows). Bump them together with the TargetFramework, not on their own.
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    groups:
+      ha-tests-minor-patch:
+        update-types: [minor, patch]

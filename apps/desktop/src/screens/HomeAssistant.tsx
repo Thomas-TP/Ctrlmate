@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Copy, KeyRound, Link2Off } from 'lucide-react';
 import { daemon } from '../api/daemon';
 import { Button, cn } from '../components/ui/Button';
@@ -247,9 +247,7 @@ function MqttCard({ snapshot: snap }: { snapshot: DaemonSnapshot }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // Follow the daemon (e.g. connection state changes) unless the user is editing.
-  useEffect(() => {
-    if (!dirty) setCfg(snap.mqtt);
-  }, [snap.mqtt, dirty]);
+  if (!dirty && cfg !== snap.mqtt) setCfg(snap.mqtt);
   const patch = (p: Partial<MqttConfig>) => {
     setDirty(true);
     setCfg((c) => ({ ...c, ...p }));

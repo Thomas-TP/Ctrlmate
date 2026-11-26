@@ -47,7 +47,7 @@ pub fn execute_power_action(action_id: &str) -> Result<String> {
                 let ok = unsafe {
                     windows::Win32::System::Power::SetSuspendState(hibernate, false, false)
                 };
-                if ok.as_bool() {
+                if ok {
                     Ok(if hibernate { "hibernating" } else { "sleeping" }.into())
                 } else {
                     bail!("SetSuspendState was refused by the system")

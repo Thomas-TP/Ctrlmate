@@ -33,7 +33,7 @@ param(
     [string]$GithubToken = $env:GITHUB_TOKEN,
     [string]$SignParams = $env:CTRLMATE_SIGN_PARAMS,
     [string]$AzureTrustedSignFile = $env:CTRLMATE_AZURE_SIGN_FILE,
-    [string]$Framework = "webview2,net8-x64-desktop"
+    [string]$Framework = "webview2,net10-x64-desktop"
 )
 
 $ErrorActionPreference = "Stop"
@@ -67,8 +67,8 @@ foreach ($f in $Required) {
     if (-not (Test-Path (Join-Path $Release $f))) { throw "Missing $Release\$f. Build with cargo build --release --locked first." }
 }
 $BridgeCandidates = @(
-    "crates\ctrlmate-lhm-bridge\bin\Release\net8.0-windows\win-x64\publish",
-    "crates\ctrlmate-lhm-bridge\bin\Release\net8.0-windows\win-x64"
+    "crates\ctrlmate-lhm-bridge\bin\Release\net10.0-windows\win-x64\publish",
+    "crates\ctrlmate-lhm-bridge\bin\Release\net10.0-windows\win-x64"
 )
 $BridgeDir = $BridgeCandidates | Where-Object { Test-Path (Join-Path $_ "ctrlmate-lhm-bridge.exe") } | Select-Object -First 1
 $Icon = "apps\desktop\src-tauri\icons\icon.ico"

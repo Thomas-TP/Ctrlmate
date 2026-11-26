@@ -3,7 +3,7 @@
 
 use crate::datadir::{DataDir, Protection, read_optional};
 use anyhow::Result;
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};

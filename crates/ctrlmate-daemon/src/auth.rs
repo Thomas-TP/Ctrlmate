@@ -13,7 +13,7 @@
 use crate::config::StoredClient;
 use chrono::{DateTime, Duration, Utc};
 use ctrlmate_protocol::PairingSessionInfo;
-use rand::{Rng, RngCore};
+use rand::{Rng, RngExt};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::IpAddr;

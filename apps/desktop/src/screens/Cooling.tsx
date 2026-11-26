@@ -38,9 +38,7 @@ export function Cooling({ snapshot: snap }: { snapshot: DaemonSnapshot }) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Cooling is never optimistic: "pending" only shows a spinner until the daemon confirms.
-  useEffect(() => {
-    if (pending && policy?.requested_preset === pending) setPending(null);
-  }, [pending, policy?.requested_preset]);
+  if (pending && policy?.requested_preset === pending) setPending(null);
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const readings: Record<Source, SensorReading> = useMemo(

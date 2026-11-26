@@ -61,7 +61,6 @@ function Palette({ onClose }: { onClose: () => void }) {
     }
   };
 
-  let lastGroup: CommandGroup | null = null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
@@ -109,8 +108,7 @@ function Palette({ onClose }: { onClose: () => void }) {
             </li>
           ) : null}
           {results.map((c, i) => {
-            const header = c.group !== lastGroup;
-            lastGroup = c.group;
+            const header = i === 0 || results[i - 1]?.group !== c.group;
             return (
               <li key={c.id} role="presentation">
                 {header ? (

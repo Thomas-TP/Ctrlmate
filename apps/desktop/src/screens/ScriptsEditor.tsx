@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Play, Plus, Trash2 } from 'lucide-react';
 import { cmd } from '../api/daemon';
 import { Button } from '../components/ui/Button';
@@ -47,10 +47,13 @@ export function ScriptsEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Follow the daemon unless the user is editing.
-  useEffect(() => {
-    if (!dirty) setDrafts(snap.scripts.map((s) => toDraft(s)));
-  }, [snap.scripts, dirty]);
+  // Follow the daemon unless the user is editing. Tracking the last list we synced from lets this
+  // run while rendering (one guarded extra pass) instead of in an effect.
+  const [syncedScripts, setSyncedScripts] = useState(snap.scripts);
+  if (!dirty && syncedScripts !== snap.scripts) {
+    setSyncedScripts(snap.scripts);
+    setDrafts(snap.scripts.map((s) => toDraft(s)));
+  }
 
   const issues = validateScripts(drafts.map(fromDraft));
   const update = (i: number, patch: Partial<Draft>) => {

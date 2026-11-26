@@ -39,9 +39,7 @@ function ColorField({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const serverHex = rgbToHex(value);
-  useEffect(() => {
-    if (draft !== null && draft === serverHex) setDraft(null);
-  }, [draft, serverHex]);
+  if (draft !== null && draft === serverHex) setDraft(null);
   useEffect(
     () => () => {
       clearTimeout(timer.current);

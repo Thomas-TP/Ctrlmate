@@ -9,7 +9,7 @@ change it in the same pull request if you must deviate.
 - Front end: Bun 1.4+ (`bun install --cwd apps/desktop --frozen-lockfile`).
 - Python 3.11+ for the helper scripts and the Home Assistant tests (`pip install -r tests/ha/requirements_test.txt`).
 - Linux build dependencies: `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config`.
-- Optional Windows bridge: .NET 8 SDK.
+- Optional Windows bridge: .NET 10 SDK.
 
 ## Quality gates (CI runs all of them)
 

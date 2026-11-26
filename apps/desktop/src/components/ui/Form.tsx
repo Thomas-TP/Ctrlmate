@@ -103,10 +103,9 @@ export function Slider({
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const shown = draft ?? value;
 
-  // The daemon echoed our value (or changed it): follow the real state again.
-  useEffect(() => {
-    if (draft !== null && Math.abs(value - draft) < step / 2) setDraft(null);
-  }, [value, draft, step]);
+  // The daemon echoed our value (or changed it): follow the real state again. Adjusting state while
+  // rendering (guarded, so it settles in one extra pass) avoids a cascading effect render.
+  if (draft !== null && Math.abs(value - draft) < step / 2) setDraft(null);
   useEffect(
     () => () => {
       clearTimeout(timer.current);
