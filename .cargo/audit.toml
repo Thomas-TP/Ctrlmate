@@ -21,4 +21,20 @@ ignore = [
   "RUSTSEC-2026-0099",
   "RUSTSEC-2026-0104",
   "RUSTSEC-2026-0382",
+  # Unmaintained / unsound notices on transitive dependencies, approved by the maintainer. None is a
+  # vulnerability in code Ctrlmate calls and none can be fixed from this repository; revisit when the
+  # named parent releases an update.
+  # derivative 2.2.0 (proc-macro, build time only): velopack 1.2.
+  "RUSTSEC-2024-0388",
+  # proc-macro-error 1.0.4 (proc-macro, build time only) and glib 0.18.5: the GTK3 stack behind
+  # tauri / tray-icon on Linux. glib's VariantStrIter unsoundness is in an API Ctrlmate never calls.
+  "RUSTSEC-2024-0370",
+  "RUSTSEC-2024-0429",
+  # rustls-pemfile 2.2.0: rumqttc 0.25 (MQTT TLS).
+  "RUSTSEC-2025-0134",
+  # zbus_names / zvariant / zvariant_derive: zbus 5, used for PackageKit (ctrlmate-hal) and by
+  # tauri-plugin-single-instance.
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0372",
 ]
