@@ -32,7 +32,7 @@ hidapi = "2.6"
 hyper = { version = "1.6", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 mdns-sd = "0.13"
-nvml-wrapper = "0.11"
+nvml-wrapper = "0.13"
 rand = "0.9"
 rcgen = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
