@@ -3,6 +3,7 @@ name = "ctrlmate-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 description = "Ctrlmate desktop UI (Tauri v2). Talks to ctrlmated through Rust commands only."
 
 [lib]

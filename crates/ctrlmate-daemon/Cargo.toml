@@ -3,6 +3,7 @@ name = "ctrlmate-daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "ctrlmated"
@@ -23,7 +24,7 @@ hyper-util.workspace = true
 mdns-sd.workspace = true
 rand.workspace = true
 rcgen.workspace = true
-rumqttc = "0.24"
+rumqttc = "0.25"
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
