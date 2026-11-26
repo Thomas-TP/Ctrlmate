@@ -118,7 +118,7 @@ Details and threat model: [SECURITY.md](SECURITY.md).
 
 ## Build from source
 
-Prerequisites: Rust (the toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml)), [Bun](https://bun.sh) 1.4+, Python 3.11+. Linux needs WebKitGTK 4.1, GTK 3, libsoup 3, libudev and hidapi development packages. The optional bridge needs the .NET 8 SDK.
+Prerequisites: Rust (the toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml)), [Bun](https://bun.sh) 1.4+, Python 3.11+. Linux needs WebKitGTK 4.1, GTK 3, libsoup 3, libudev and hidapi development packages. The optional bridge needs the .NET 10 SDK.
 
 ```sh
 bun install --cwd apps/desktop --frozen-lockfile

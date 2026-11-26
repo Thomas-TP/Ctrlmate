@@ -2,4 +2,4 @@
 # Python version and Home Assistant version are pinned by this package; use a
 # release that matches the Home Assistant version you target.
 pytest-homeassistant-custom-component>=0.13.375
-ruff>=0.17
+ruff>=0.17.6

@@ -25,7 +25,9 @@ export function useResource<T>(load: () => Promise<T>): Resource<T> {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const fn = useRef(load);
-  fn.current = load;
+  useEffect(() => {
+    fn.current = load;
+  });
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -33,8 +35,8 @@ export function useResource<T>(load: () => Promise<T>): Resource<T> {
       alive.current = false;
     };
   }, []);
-  const reload = useCallback(() => {
-    setLoading(true);
+  // The state starts as `loading`, so the first fetch needs no synchronous setState in an effect.
+  const fetchOnce = useCallback(() => {
     fn.current()
       .then((v) => {
         if (!alive.current) return;
@@ -48,7 +50,13 @@ export function useResource<T>(load: () => Promise<T>): Resource<T> {
         if (alive.current) setLoading(false);
       });
   }, []);
-  useEffect(reload, [reload]);
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetchOnce();
+  }, [fetchOnce]);
+  useEffect(() => {
+    fetchOnce();
+  }, [fetchOnce]);
   return { data, error, loading, reload };
 }
 
@@ -59,7 +67,9 @@ export const useServiceStatus = (): Resource<ServiceStatus> => useResource(app.s
 export function useDebounced<A extends unknown[]>(fn: (...a: A) => void, ms: number) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const latest = useRef(fn);
-  latest.current = fn;
+  useEffect(() => {
+    latest.current = fn;
+  });
   useEffect(() => () => clearTimeout(timer.current), []);
   return useCallback(
     (...a: A) => {

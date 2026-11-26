@@ -3,6 +3,25 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Dependencies brought up to date, replacing the Dependabot pull requests:
+  - Rust: `rand` 0.10 (CSPRNG unchanged: PIN and IPC token still come from `ThreadRng`), `windows` 0.62,
+    `nvml-wrapper` 0.13, `mdns-sd` 0.22, `tokio-tungstenite` 0.30, `rcgen` 0.14, `sha2` 0.11,
+    `libloading` 0.9, `winreg` 0.56 and the lockfile.
+  - Front end: TypeScript 7 (with the TypeScript 6 compatibility package for `typescript-eslint`), Vite 8,
+    Vitest 5, ESLint 10, `eslint-plugin-react-hooks` 7 (state derived while rendering instead of in effects),
+    `lucide-react` 1.x, `jest-dom` 8, `jsdom` 31.
+  - The LibreHardwareMonitor bridge targets .NET 10 LTS (.NET 8 is out of support); the Velopack runtime
+    dependency is now `net10-x64-desktop`.
+  - GitHub Actions: `checkout` 7, `upload-artifact` 7, `download-artifact` 8, `cache` 6, `setup-python` 7,
+    `setup-dotnet` 6, `attest-build-provenance` 4, `cosign-installer` 4, `azure/login` 3, `install-nix-action` 32.
+- Dependabot: Python requirements are read from the repository root, minor/patch updates are grouped per
+  ecosystem, and `System.*` NuGet majors are held to the target framework.
+- Not updated yet: `sysinfo` (0.40 changes the disk and constructor APIs) and `zbus` (6; the Linux PackageKit
+  code and `tauri-plugin-single-instance` still use 5).
+
 ## [0.6.0] - 2026-11-25
 
 Major rework: security, correctness, honesty of sensors, UI and release engineering. Contract:

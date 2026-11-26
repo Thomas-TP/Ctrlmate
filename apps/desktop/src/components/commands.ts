@@ -32,7 +32,7 @@ export function useCommands(): PaletteCommand[] {
   const setScreen = useNav((s) => s.setScreen);
   const setLanguage = usePrefs((s) => s.setLanguage);
   const setTheme = usePrefs((s) => s.setTheme);
-  const info = useAppInfo();
+  const { data: appInfo } = useAppInfo();
 
   return useMemo(() => {
     const list: PaletteCommand[] = [];
@@ -140,7 +140,7 @@ export function useCommands(): PaletteCommand[] {
         keywords: 'support bundle copy',
         run: async () => {
           const ok = await copyText(
-            buildDiagnostics({ app: info.data, connection, snapshot, locale }),
+            buildDiagnostics({ app: appInfo, connection, snapshot, locale }),
           );
           pushToast(
             ok ? 'success' : 'error',
@@ -178,6 +178,6 @@ export function useCommands(): PaletteCommand[] {
     setScreen,
     setLanguage,
     setTheme,
-    info.data,
+    appInfo,
   ]);
 }

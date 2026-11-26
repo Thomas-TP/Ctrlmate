@@ -20,7 +20,7 @@ env:
   CARGO_INCREMENTAL: "0"
   # Pinned tool versions (bump deliberately, together with rust-toolchain.toml).
   BUN_VERSION: "1.4.4"
-  DOTNET_VERSION: "8.0.x"
+  DOTNET_VERSION: "10.0.x"
   PYTHON_VERSION: "3.14"
 
 # Action pinning policy: third-party actions are pinned to an exact major tag and kept current by
@@ -32,8 +32,8 @@ jobs:
     name: Version and packaging consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Version drift (Cargo workspace is the single source)
@@ -62,11 +62,11 @@ jobs:
     name: Front end (typecheck, lint, test, build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('apps/desktop/bun.lock') }}
@@ -86,7 +86,7 @@ jobs:
       - name: Build
         working-directory: apps/desktop
         run: bun run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: apps/desktop/dist
@@ -102,7 +102,7 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install toolchain from rust-toolchain.toml
         shell: bash
         run: rustup show active-toolchain || rustup toolchain install
@@ -117,7 +117,7 @@ jobs:
             pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev librsvg2-dev libudev-dev libhidapi-dev \
             libdbus-1-dev libssl-dev
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: apps/desktop/dist
@@ -134,7 +134,7 @@ jobs:
     name: Dependency audit (cargo-deny, cargo-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-audit
@@ -147,8 +147,8 @@ jobs:
     name: .NET deep-hardware bridge (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore (locked) and build
@@ -160,7 +160,7 @@ jobs:
     name: Home Assistant integration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: hassfest
         uses: home-assistant/actions/hassfest@master # upstream publishes only the rolling branch
       - name: HACS validation
@@ -168,7 +168,7 @@ jobs:
         with:
           category: integration
           ignore: brands
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -188,7 +188,7 @@ jobs:
     needs: [frontend, consistency]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
@@ -200,7 +200,7 @@ jobs:
             pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev librsvg2-dev libudev-dev libhidapi-dev \
             libdbus-1-dev libssl-dev rpm lintian
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: apps/desktop/dist
@@ -228,7 +228,7 @@ jobs:
           sudo install -Dm755 target/release/ctrlmated /usr/bin/ctrlmated
           sudo install -Dm755 target/release/ctrlmate-agent /usr/bin/ctrlmate-agent
           systemd-analyze verify packaging/linux/ctrlmated.service
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-packages-smoke
           path: dist-release/linux
@@ -241,7 +241,7 @@ jobs:
     steps:
       - name: Install tooling
         run: pacman -Syu --noconfirm git namcap python
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate PKGBUILD
         run: |
           useradd -m builder
@@ -257,8 +257,8 @@ jobs:
     name: Nix flake check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v30
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes

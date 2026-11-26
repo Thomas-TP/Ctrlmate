@@ -509,8 +509,8 @@ fn find_bridge_executable() -> Option<PathBuf> {
     ];
     for root in dir.ancestors().skip(1).take(4) {
         let base = root.join("crates").join("ctrlmate-lhm-bridge").join("bin");
-        candidates.push(base.join("Release/net8.0-windows/win-x64/ctrlmate-lhm-bridge.exe"));
-        candidates.push(base.join("Release/net8.0-windows/ctrlmate-lhm-bridge.exe"));
+        candidates.push(base.join("Release/net10.0-windows/win-x64/ctrlmate-lhm-bridge.exe"));
+        candidates.push(base.join("Release/net10.0-windows/ctrlmate-lhm-bridge.exe"));
     }
     candidates
         .into_iter()

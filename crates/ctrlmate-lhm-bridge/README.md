@@ -87,4 +87,4 @@ On `quit`/`stop`, stdin EOF (daemon gone) or anti-cheat detection the bridge, in
 dotnet build -c Release crates/ctrlmate-lhm-bridge
 ```
 
-Requires the .NET 8 SDK (checked with 8.0.428). The output `ctrlmate-lhm-bridge.exe` needs the .NET 8 desktop runtime.
+Requires the .NET 10 SDK (LTS). The output `ctrlmate-lhm-bridge.exe` needs the .NET 10 desktop runtime, which the Velopack installer sets up (`net10-x64-desktop`).
