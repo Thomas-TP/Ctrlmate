@@ -7,6 +7,7 @@
 //! `set_window_theme`, `window_hide`, `app_quit`.
 //! Events: `daemon://event`, `daemon://connection`, `app-update://progress`.
 
+mod autostart;
 mod client;
 #[cfg(debug_assertions)]
 mod dev_daemon;
@@ -147,8 +148,27 @@ fn app_settings_get(state: State<'_, AppState>) -> AppSettings {
     state.settings.lock().map(|g| *g).unwrap_or_default()
 }
 
+/// Registers (or removes) the OS launch-at-login entry. Enabling it also sets up the session agent
+/// (its own autostart entry, started right away) because lock, audio, notifications and scripts
+/// depend on it. Debug builds never touch the OS entries: they would point at a dev binary.
+fn apply_launch_at_login(on: bool) -> std::io::Result<()> {
+    if cfg!(debug_assertions) {
+        return Ok(());
+    }
+    autostart::set_enabled(on)?;
+    if on {
+        tauri::async_runtime::spawn(async {
+            let _ = service::install_agent_autostart().await;
+        });
+        service::start_agent_detached();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn app_settings_set(state: State<'_, AppState>, settings: AppSettings) -> Result<(), IpcError> {
+    apply_launch_at_login(settings.launch_at_login)
+        .map_err(|e| IpcError::with_detail(ErrorCode::Internal, e.to_string()))?;
     settings::save(&state.settings_dir, &settings)
         .map_err(|e| IpcError::with_detail(ErrorCode::Internal, e.to_string()))?;
     if let Ok(mut g) = state.settings.lock() {
@@ -237,8 +257,11 @@ fn build_tray(app: &tauri::App) -> tauri::Result<TrayItems> {
 pub fn run() {
     let app = tauri::Builder::default()
         // Single instance must be the first plugin.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A login-time launch (`--hidden`) must not pop the window of the running instance.
+            if !args.iter().any(|a| a == autostart::HIDDEN_ARG) {
+                show_main(app);
+            }
         }))
         .setup(|app| {
             let settings_dir = app
@@ -261,17 +284,30 @@ pub fn run() {
             };
             #[cfg(debug_assertions)]
             state.dev_daemon.spawn_if_enabled();
-            match build_tray(app) {
+            let tray_ok = match build_tray(app) {
                 Ok(items) => {
                     if let Ok(mut g) = state.tray.lock() {
                         *g = Some(items);
                     }
+                    true
                 }
-                Err(e) => tracing::warn!("tray icon unavailable: {e}"),
-            }
+                Err(e) => {
+                    tracing::warn!("tray icon unavailable: {e}");
+                    false
+                }
+            };
             app.manage(state);
 
-            if !settings.start_hidden {
+            if settings.launch_at_login
+                && let Err(e) = apply_launch_at_login(true)
+            {
+                tracing::warn!("could not register launch at login: {e}");
+            }
+
+            // Hidden start (setting or login launch) only makes sense with a tray icon to bring the
+            // window back from; without one the window is shown so the app is never invisible.
+            let launched_hidden = std::env::args().any(|a| a == autostart::HIDDEN_ARG);
+            if !tray_ok || !(settings.start_hidden || launched_hidden) {
                 show_main(app.handle());
             }
             ws::spawn(app.handle().clone(), hub, client);
@@ -281,10 +317,15 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == MAIN_WINDOW
             {
+                // Hiding only works when there is a tray icon to restore the window from.
                 let to_tray = window
                     .app_handle()
                     .try_state::<AppState>()
-                    .and_then(|s| s.settings.lock().ok().map(|g| g.close_to_tray))
+                    .and_then(|s| {
+                        let wanted = s.settings.lock().ok().map(|g| g.close_to_tray)?;
+                        let has_tray = s.tray.lock().ok().is_some_and(|t| t.is_some());
+                        Some(wanted && has_tray)
+                    })
                     .unwrap_or(true);
                 if to_tray {
                     api.prevent_close();

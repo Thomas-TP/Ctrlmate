@@ -53,7 +53,7 @@ export function installMockBridge(param = '1'): void {
   const daemon = new MockDaemon(scenario, (snap) => {
     if (!blocked) void emit('daemon://event', { type: 'snapshot', ...snap });
   });
-  let settings = { close_to_tray: true, start_hidden: false };
+  let settings = { close_to_tray: true, start_hidden: false, launch_at_login: true };
   let outdatedService = false;
 
   mockIPC(

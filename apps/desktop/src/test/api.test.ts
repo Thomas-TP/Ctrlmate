@@ -118,7 +118,7 @@ describe('app API', () => {
   it('calls the documented commands with their arguments', async () => {
     const calls = mock(({ cmd: c }) => (c === 'app_info' ? { version: '0.6.0' } : null));
     await app.info();
-    await app.setSettings({ close_to_tray: false, start_hidden: true });
+    await app.setSettings({ close_to_tray: false, start_hidden: true, launch_at_login: false });
     await app.serviceInstallOrUpgrade('upgrade');
     await app.setWindowTheme('dark');
     await app.setTrayLabels('Show', 'Quit');
@@ -129,7 +129,9 @@ describe('app API', () => {
       'set_window_theme',
       'set_tray_labels',
     ]);
-    expect(calls[1]?.args).toEqual({ settings: { close_to_tray: false, start_hidden: true } });
+    expect(calls[1]?.args).toEqual({
+      settings: { close_to_tray: false, start_hidden: true, launch_at_login: false },
+    });
     expect(calls[2]?.args).toEqual({ action: 'upgrade' });
   });
 });

@@ -485,6 +485,9 @@ export const en = {
   'settings.unit.needs_daemon': 'Needs a connection to the service.',
   'settings.behaviour.title': 'Window',
   'settings.behaviour.unavailable': 'Window options are only available in the desktop app.',
+  'settings.launch_at_login': 'Start with the system',
+  'settings.launch_at_login.desc':
+    'Opens Ctrlmate in the tray when you sign in, together with the session agent that lock, sound, notifications and scripts need.',
   'settings.close_to_tray': 'Close to the tray',
   'settings.close_to_tray.desc':
     'Closing the window keeps Ctrlmate running in the notification area.',

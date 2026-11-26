@@ -109,6 +109,12 @@ function BehaviourCard() {
       ) : (
         <div className="divide-y divide-line">
           <SwitchRow
+            label={t('settings.launch_at_login')}
+            description={t('settings.launch_at_login.desc')}
+            checked={settings.launch_at_login}
+            onChange={(launch_at_login) => void update({ launch_at_login })}
+          />
+          <SwitchRow
             label={t('settings.close_to_tray')}
             description={t('settings.close_to_tray.desc')}
             checked={settings.close_to_tray}

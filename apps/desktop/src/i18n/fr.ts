@@ -513,6 +513,9 @@ export const fr: Record<Keys, string> = {
   'settings.behaviour.title': 'Fenêtre',
   'settings.behaviour.unavailable':
     'Les options de fenêtre ne sont disponibles que dans l’application de bureau.',
+  'settings.launch_at_login': 'Démarrer avec le système',
+  'settings.launch_at_login.desc':
+    'Ouvre Ctrlmate dans la zone de notification à l’ouverture de session, avec l’agent de session dont dépendent le verrouillage, le son, les notifications et les scripts.',
   'settings.close_to_tray': 'Fermer vers la zone de notification',
   'settings.close_to_tray.desc':
     'Fermer la fenêtre laisse Ctrlmate actif dans la zone de notification.',

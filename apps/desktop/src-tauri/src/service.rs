@@ -266,6 +266,31 @@ pub async fn install_agent_autostart() -> Result<AutostartOutcome, IpcError> {
     })
 }
 
+/// Starts `ctrlmate-agent` now, detached from this app (it keeps running if the UI quits).
+/// The agent holds a single-instance lock, so this is a no-op when it already runs.
+pub fn start_agent_detached() {
+    let Some(exe) = helper_binary("ctrlmate-agent") else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+    if let Ok(mut child) = cmd.spawn() {
+        // Reap it when it exits so a second instance that bails out does not linger as a zombie.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

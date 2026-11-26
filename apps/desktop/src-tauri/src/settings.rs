@@ -11,6 +11,8 @@ const FILE: &str = "app-settings.json";
 pub struct AppSettings {
     pub close_to_tray: bool,
     pub start_hidden: bool,
+    /// Start Ctrlmate (hidden in the tray) when the user signs in to the OS.
+    pub launch_at_login: bool,
 }
 
 impl Default for AppSettings {
@@ -18,6 +20,7 @@ impl Default for AppSettings {
         Self {
             close_to_tray: true,
             start_hidden: false,
+            launch_at_login: true,
         }
     }
 }
@@ -50,6 +53,7 @@ mod tests {
         let s = AppSettings {
             close_to_tray: false,
             start_hidden: true,
+            launch_at_login: false,
         };
         assert!(save(&dir, &s).is_ok());
         assert_eq!(load(&dir), s);
@@ -59,7 +63,8 @@ mod tests {
             load(&dir),
             AppSettings {
                 close_to_tray: true,
-                start_hidden: true
+                start_hidden: true,
+                launch_at_login: true,
             }
         );
         std::fs::write(dir.join(FILE), "nope").unwrap_or_default();

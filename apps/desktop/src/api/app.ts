@@ -58,6 +58,7 @@ export interface AppUpdateStatus {
 export interface AppSettings {
   close_to_tray: boolean;
   start_hidden: boolean;
+  launch_at_login: boolean;
 }
 
 export type DaemonEvent = { type: 'auth_ok' } | { type: 'snapshot'; snapshot: DaemonSnapshot };
