@@ -1,0 +1,18 @@
+# cargo-audit configuration. Mirrors the advisory ignores in deny.toml, which carries the reasons;
+# every entry was approved by the maintainer.
+#
+# zip 8.x: transitive dependency of velopack 1.2 (self-update). ZipArchive::extract is never called
+# on untrusted input; update packages come from this project's own GitHub releases.
+# RUSTSEC-2026-0543: chrono unmaintained notice with no safe upgrade; replace with the time crate.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+  "RUSTSEC-2026-0545",
+  "RUSTSEC-2026-0546",
+  "RUSTSEC-2026-0547",
+  "RUSTSEC-2026-0548",
+  "RUSTSEC-2026-0543",
+]

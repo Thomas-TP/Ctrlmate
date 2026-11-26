@@ -10,7 +10,25 @@ targets = [
 version = 2
 yanked = "deny"
 # Add RUSTSEC ids here (with a reason) only when no fix exists and the code path is unreachable.
-ignore = []
+# Every entry below was approved by the maintainer; revisit when the named dependency moves.
+#
+# zip 8.x is a transitive dependency of velopack 1.2 (self-update). Ctrlmate never calls
+# ZipArchive::extract on untrusted input: Velopack only unpacks update packages fetched from this
+# project's own GitHub releases over TLS. Remove these once velopack and vpk move to a zip release
+# that contains the fixes.
+ignore = [
+  { id = "RUSTSEC-2026-0367", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0368", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0369", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0429", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0545", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0546", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0547", reason = "zip via velopack; extract() never run on untrusted input" },
+  { id = "RUSTSEC-2026-0548", reason = "zip via velopack; extract() never run on untrusted input" },
+  # chrono is flagged unmaintained (a notice, not a vulnerability) and has no safe upgrade. It only
+  # formats and parses RFC 3339 timestamps. Replace it with the time crate in a dedicated change.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained notice, no safe upgrade; timestamps only" },
+]
 
 [licenses]
 version = 2
