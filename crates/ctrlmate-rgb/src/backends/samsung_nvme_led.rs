@@ -1,16 +1,14 @@
-//! Samsung 990 PRO Heatsink NVMe LED safe detection & capability diagnostics.
+//! Samsung 990 PRO **with Heatsink** NVMe LED: read-only diagnostics, never controllable.
 //!
-//! Hardware reality (verified as of 2026):
-//! - The LED on the Samsung 990 PRO Heatsink is driven internally by the NVMe controller
-//!   via undocumented proprietary NVMe Admin Vendor-Specific Commands (`0xC0..=0xFF`).
-//! - Neither Samsung nor any open-source project (including OpenRGB / SignalRGB) has a
-//!   publicly documented, verified safe protocol for writing LED states over NVMe pass-through.
-//! - Moreover, known Samsung 990 PRO firmware quirks can lock the LED controller until a full
-//!   PSU power drain if unexpected commands are sent.
-//! - Therefore, for boot-drive safety, Ctrlmate detects the Samsung 990 PRO drive safely via
-//!   read-only storage descriptors (`IOCTL_STORAGE_QUERY_PROPERTY` / `/sys/class/nvme/*/model`),
-//!   exposes full SMART temperature & disk usage telemetry, and reports transparent LED status
-//!   without ever transmitting unverified NVMe admin opcodes.
+//! * The heatsink LED is not exposed through any public, verified protocol: Samsung documents no
+//!   command for it, and no open-source project we could verify (OpenRGB, liquidctl) implements one.
+//!   Sending unverified NVMe vendor-specific admin opcodes to a boot drive is a data-safety risk, so
+//!   this module only *detects* the drive through read-only storage descriptors
+//!   (`IOCTL_STORAGE_QUERY_PROPERTY` / `/sys/class/nvme/*/model`) and reports the LED as
+//!   `controllable: false` with the reason code `no_public_protocol`. It never registers a zone that
+//!   can receive frames.
+//! * Candidate detection is limited to the Heatsink variant: the plain 990 PRO and the 980 PRO have
+//!   no LED, so they are not reported.
 
 use ctrlmate_protocol::RgbDeviceStatus;
 
@@ -37,18 +35,34 @@ pub fn detect_samsung_nvme_led_status() -> Vec<RgbDeviceStatus> {
                 id: format!("samsung_nvme_led_{idx}"),
                 name: format!("{}{fw_suffix} — LED Heatsink", drv.model),
                 zone_id: "light_storage".into(),
-                transport: "NVMe Vendor-Specific (protocole propriétaire fermé)".into(),
+                transport: "NVMe (read-only detection)".into(),
                 controllable: false,
-                reason: "Samsung ne documente aucune API ni opcode NVMe public pour la LED du 990 PRO Heatsink (non supporté par OpenRGB/SignalRGB). Par sécurité pour votre SSD système, Ctrlmate n'envoie aucun opcode NVMe non vérifié — réglez ou éteignez la LED une fois dans Samsung Magician (état mémorisé dans le SSD)."
-                    .into(),
+                reason: "no_public_protocol".into(),
             }
         })
         .collect()
 }
 
+/// `true` only for the "Samsung SSD 990 PRO with Heatsink" model string.
 pub fn is_samsung_heatsink_candidate(model: &str) -> bool {
     let lower = model.to_ascii_lowercase();
-    lower.contains("samsung") && (lower.contains("990 pro") || lower.contains("980 pro"))
+    lower.contains("samsung") && lower.contains("990 pro") && lower.contains("heatsink")
+}
+
+/// Zones for the Samsung LED: always informational (`controllable == false`).
+pub fn samsung_zones() -> Vec<crate::zones::ZoneInfo> {
+    detect_samsung_nvme_led_status()
+        .into_iter()
+        .map(|s| {
+            crate::zones::ZoneInfo::uncontrollable(
+                crate::zones::ZONE_STORAGE,
+                s.name,
+                "samsung_nvme_led",
+                s.transport,
+                "no_public_protocol",
+            )
+        })
+        .collect()
 }
 
 #[cfg(target_os = "windows")]
@@ -56,16 +70,16 @@ fn enumerate_samsung_nvme_drives() -> Vec<DetectedSamsungNvme> {
     use std::ffi::OsStr;
     use std::mem::size_of;
     use std::os::windows::ffi::OsStrExt;
-    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows::Win32::Storage::FileSystem::{
         CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
-    use windows::Win32::System::Ioctl::{
-        PropertyStandardQuery, StorageDeviceProperty, IOCTL_STORAGE_QUERY_PROPERTY,
-        STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY,
-    };
     use windows::Win32::System::IO::DeviceIoControl;
+    use windows::Win32::System::Ioctl::{
+        IOCTL_STORAGE_QUERY_PROPERTY, PropertyStandardQuery, STORAGE_DEVICE_DESCRIPTOR,
+        STORAGE_PROPERTY_QUERY, StorageDeviceProperty,
+    };
+    use windows::core::PCWSTR;
 
     let mut found = Vec::new();
     for idx in 0..8 {
@@ -118,20 +132,24 @@ fn enumerate_samsung_nvme_drives() -> Vec<DetectedSamsungNvme> {
         if ok.is_err() || (returned as usize) < size_of::<STORAGE_DEVICE_DESCRIPTOR>() {
             continue;
         }
-        let desc = unsafe { &*(buffer.as_ptr() as *const STORAGE_DEVICE_DESCRIPTOR) };
+        // SAFETY: `buffer` holds at least size_of::<STORAGE_DEVICE_DESCRIPTOR>() initialised bytes;
+        // read_unaligned copes with the byte buffer's alignment.
+        let desc = unsafe {
+            std::ptr::read_unaligned(buffer.as_ptr() as *const STORAGE_DEVICE_DESCRIPTOR)
+        };
         let prod = read_cstr_at(&buffer[..returned as usize], desc.ProductIdOffset as usize);
         let rev = read_cstr_at(
             &buffer[..returned as usize],
             desc.ProductRevisionOffset as usize,
         );
-        if let Some(model) = prod {
-            if is_samsung_heatsink_candidate(&model) {
-                found.push(DetectedSamsungNvme {
-                    model,
-                    firmware: rev,
-                    device_path: path_str,
-                });
-            }
+        if let Some(model) = prod
+            && is_samsung_heatsink_candidate(&model)
+        {
+            found.push(DetectedSamsungNvme {
+                model,
+                firmware: rev,
+                device_path: path_str,
+            });
         }
     }
     found
@@ -145,11 +163,7 @@ fn read_cstr_at(buf: &[u8], offset: usize) -> Option<String> {
     let slice = &buf[offset..];
     let end = slice.iter().position(|&b| b == 0).unwrap_or(slice.len());
     let s = String::from_utf8_lossy(&slice[..end]).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 #[cfg(target_os = "linux")]
@@ -189,11 +203,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn samsung_status_is_never_controllable() {
+        for z in samsung_zones() {
+            assert!(!z.controllable);
+        }
+        for s in detect_samsung_nvme_led_status() {
+            assert!(!s.controllable);
+        }
+    }
+
+    #[test]
     fn matches_samsung_990_pro_model() {
         assert!(is_samsung_heatsink_candidate(
             "Samsung SSD 990 PRO with Heatsink 2TB"
         ));
-        assert!(is_samsung_heatsink_candidate("Samsung SSD 990 PRO 2TB"));
+        assert!(!is_samsung_heatsink_candidate("Samsung SSD 990 PRO 2TB"));
+        assert!(!is_samsung_heatsink_candidate(
+            "Samsung SSD 980 PRO with Heatsink 1TB"
+        ));
         assert!(!is_samsung_heatsink_candidate("WD_BLACK SN850X 2TB"));
     }
 }

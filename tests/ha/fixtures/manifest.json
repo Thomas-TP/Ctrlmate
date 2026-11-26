@@ -1,0 +1,40 @@
+{
+  "type": "manifest",
+  "protocol_version": 1,
+  "host": {
+    "device_id": "pc-test-0001",
+    "name": "Gaming PC",
+    "manufacturer": "Custom build",
+    "model": "Windows 11 desktop",
+    "os_name": "Windows",
+    "os_version": "10.0.26100",
+    "sw_version": "0.6.0",
+    "mac_address": "AA:BB:CC:DD:EE:FF",
+    "security_mode": "zero_kernel_safe"
+  },
+  "child_devices": [
+    {"id": "cpu_0", "name": "AMD Ryzen 9 7900X3D", "category": "cpu", "manufacturer": "AMD", "model": "Ryzen 9 7900X3D", "hw_version": null},
+    {"id": "gpu_0", "name": "NVIDIA GeForce RTX 4080", "category": "gpu", "manufacturer": "NVIDIA", "model": "RTX 4080", "hw_version": null},
+    {"id": "cooler_0", "name": "NZXT Kraken 360", "category": "cooler", "manufacturer": "NZXT", "model": "Kraken 360", "hw_version": null}
+  ],
+  "entities": [
+    {"id": "cpu_0_load", "name": "Load", "platform": "sensor", "child_device_id": "cpu_0", "device_class": null, "state_class": "measurement", "unit_of_measurement": "%", "icon": "mdi:cpu-64-bit", "entity_category": null, "suggested_display_precision": 1, "exposed": true},
+    {"id": "cpu_0_temperature", "name": "Temperature", "platform": "sensor", "child_device_id": "cpu_0", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "icon": null, "entity_category": null, "suggested_display_precision": 1, "exposed": true},
+    {"id": "gpu_0_temperature", "name": "Temperature", "platform": "sensor", "child_device_id": "gpu_0", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "icon": null, "entity_category": null, "suggested_display_precision": 1, "exposed": true},
+    {"id": "cooler_0_pump_rpm", "name": "Pump Speed", "platform": "sensor", "child_device_id": "cooler_0", "device_class": null, "state_class": "measurement", "unit_of_measurement": "RPM", "icon": "mdi:pump", "entity_category": null, "suggested_display_precision": 0, "exposed": true},
+    {"id": "active_application", "name": "Active Application", "platform": "sensor", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:application", "entity_category": null, "suggested_display_precision": null, "exposed": true},
+    {"id": "light_global", "name": "PC Lighting", "platform": "light", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": null, "entity_category": null, "suggested_display_precision": null, "exposed": true,
+      "light_caps": {"supports_rgb": true, "supports_color_temp": true, "min_color_temp_kelvin": 2000, "max_color_temp_kelvin": 6500, "supports_transition": true, "is_master_zone": true, "led_count": 1}},
+    {"id": "light_cooler", "name": "Lighting", "platform": "light", "child_device_id": "cooler_0", "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": null, "entity_category": null, "suggested_display_precision": null, "exposed": true,
+      "light_caps": {"supports_rgb": true, "supports_color_temp": true, "min_color_temp_kelvin": 2000, "max_color_temp_kelvin": 6500, "supports_transition": true, "is_master_zone": false, "led_count": 12}},
+    {"id": "cooling_preset", "name": "Cooling Mode", "platform": "select", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:fan", "entity_category": null, "suggested_display_precision": null, "options": ["auto", "silent", "balanced", "performance", "gaming"], "exposed": true},
+    {"id": "audio_output", "name": "Audio Output", "platform": "select", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:speaker", "entity_category": null, "suggested_display_precision": null, "options": ["Speakers", "Headset"], "exposed": true},
+    {"id": "thermal_failsafe", "name": "Thermal Failsafe", "platform": "binary_sensor", "child_device_id": null, "device_class": "safety", "state_class": null, "unit_of_measurement": null, "icon": "mdi:thermometer-alert", "entity_category": "diagnostic", "suggested_display_precision": null, "exposed": true},
+    {"id": "reboot_required", "name": "Reboot Required", "platform": "binary_sensor", "child_device_id": null, "device_class": "problem", "state_class": null, "unit_of_measurement": null, "icon": "mdi:restart-alert", "entity_category": "diagnostic", "suggested_display_precision": null, "exposed": true},
+    {"id": "os_updates", "name": "OS Updates", "platform": "update", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:update", "entity_category": "diagnostic", "suggested_display_precision": null, "exposed": true},
+    {"id": "master_volume", "name": "Master Volume", "platform": "number", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": "%", "icon": "mdi:volume-high", "entity_category": null, "suggested_display_precision": null, "number_range": {"min": 0.0, "max": 100.0, "step": 1.0}, "exposed": true},
+    {"id": "audio_mute", "name": "Audio Mute", "platform": "switch", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:volume-mute", "entity_category": null, "suggested_display_precision": null, "exposed": true},
+    {"id": "power_lock", "name": "Lock Session", "platform": "button", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:lock", "entity_category": null, "suggested_display_precision": null, "exposed": true},
+    {"id": "script_backup", "name": "Run backup", "platform": "button", "child_device_id": null, "device_class": null, "state_class": null, "unit_of_measurement": null, "icon": "mdi:script-text-play-outline", "entity_category": null, "suggested_display_precision": null, "exposed": true}
+  ]
+}

@@ -1,12 +1,15 @@
 {
   "name": "ctrlmate-monorepo",
   "private": true,
+  "version": "0.6.0",
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "daemon:dev": "cargo run -p ctrlmate-daemon",
+    "daemon:dev": "cargo run -p ctrlmate-daemon -- --foreground",
     "daemon:telemetry": "cargo run -p ctrlmate-daemon -- --print-telemetry",
     "ui:dev": "bun run --cwd apps/desktop dev",
     "ui:build": "bun run --cwd apps/desktop build",
-    "test:rust": "cargo test -p ctrlmate-protocol -p ctrlmate-rgb -p ctrlmate-cooling -p ctrlmate-hal -p ctrlmate-daemon"
+    "test:rust": "cargo test --workspace --locked",
+    "version:sync": "python scripts/sync_version.py",
+    "version:check": "python scripts/sync_version.py --check"
   }
 }

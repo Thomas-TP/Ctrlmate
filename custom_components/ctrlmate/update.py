@@ -1,4 +1,4 @@
-"""Update platform for Ctrlmate (Windows Update WUA & Linux PackageKit/fwupd)."""
+"""Update platform: pending operating system updates (Windows Update / PackageKit)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import CtrlmateConfigEntry
-from .entity import CtrlmateEntity
+from .entity import (
+    CtrlmateEntity,
+    async_setup_manifest_platform,
+    update_kb_ids,
+    update_pending_count,
+    update_titles,
+)
+
+PARALLEL_UPDATES = 1
+
+MAX_SUMMARY = 255
 
 
 async def async_setup_entry(
@@ -17,56 +27,70 @@ async def async_setup_entry(
     entry: CtrlmateConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    added: set[str] = set()
+    async_setup_manifest_platform(hass, entry, async_add_entities, "update", CtrlmateUpdateEntity)
 
-    def _sync_entities() -> None:
-        new_entities = []
-        for desc in coordinator.manifest.get("entities", []):
-            if desc.get("platform") != "update" or not desc.get("exposed", True):
-                continue
-            eid = desc["id"]
-            if eid not in added:
-                added.add(eid)
-                new_entities.append(CtrlmateUpdateEntity(coordinator, desc))
-        if new_entities:
-            async_add_entities(new_entities)
 
-    _sync_entities()
-    entry.async_on_unload(coordinator.add_manifest_listener(_sync_entities))
+def _clip(text: str, limit: int = MAX_SUMMARY) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 class CtrlmateUpdateEntity(CtrlmateEntity, UpdateEntity):
-    """Native Home Assistant Update entity for pending Windows/Linux updates."""
+    """OS updates without invented version numbers.
 
-    _attr_supported_features = UpdateEntityFeature.INSTALL
+    ``installed_version`` is the real OS version. ``latest_version`` equals it when
+    nothing is pending, otherwise it lists the pending KB ids (or a pending count
+    when the platform has no KB ids). The count has its own sensor.
+    """
 
-    def _update_state(self) -> dict[str, Any]:
-        val = self._raw_value()
-        return val if isinstance(val, dict) else {}
+    _attr_supported_features = UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
+
+    def _info(self) -> dict[str, Any]:
+        value = self._raw_value()
+        return value if isinstance(value, dict) else {}
 
     @property
     def installed_version(self) -> str | None:
-        return self._update_state().get("installed_version")
+        version = self._info().get("installed_version")
+        if not version:
+            version = self.coordinator.manifest.get("host", {}).get("os_version")
+        return str(version) if version else None
 
     @property
     def latest_version(self) -> str | None:
-        st = self._update_state()
-        pending = int(st.get("pending_count", 0))
-        if pending > 0:
-            return f"{st.get('installed_version', 'OS')} (+{pending} update{'s' if pending > 1 else ''})"
-        return st.get("installed_version")
+        info = self._info()
+        installed = self.installed_version
+        pending = update_pending_count(info)
+        if pending is None or installed is None:
+            return None  # unknown rather than a made-up answer
+        if pending <= 0:
+            return installed
+        kb_ids = update_kb_ids(info)
+        return _clip(", ".join(kb_ids)) if kb_ids else f"{pending} pending"
 
     @property
     def in_progress(self) -> bool:
-        return bool(self._update_state().get("in_progress", False))
+        return bool(self._info().get("in_progress", False))
 
     @property
     def release_summary(self) -> str | None:
-        titles = self._update_state().get("pending_titles") or []
-        if not titles:
+        titles = update_titles(self._info())
+        return _clip("; ".join(titles)) if titles else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        info = self._info()
+        if not info:
             return None
-        return "\n".join(f"- {t}" for t in titles[:10])
+        attrs: dict[str, Any] = {
+            "pending_count": update_pending_count(info),
+            "pending_titles": update_titles(info),
+            "kb_ids": update_kb_ids(info),
+            "reboot_required": bool(info.get("reboot_required", False)),
+            "last_checked": info.get("last_checked"),
+        }
+        if info.get("error"):
+            attrs["error"] = info["error"]
+        return attrs
 
     async def async_install(self, version: str | None, backup: bool, **kwargs: Any) -> None:
         await self.coordinator.async_send_command({"action": "install_os_updates"})

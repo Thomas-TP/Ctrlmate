@@ -1,0 +1,26 @@
+post_install() {
+  systemd-sysusers ctrlmate.conf >/dev/null 2>&1 || true
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+  udevadm trigger --subsystem-match=hidraw --subsystem-match=i2c-dev >/dev/null 2>&1 || true
+  modprobe i2c-dev >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  echo ":: Enable the daemon:        sudo systemctl enable --now ctrlmated.service"
+  echo ":: Allow your user to talk to it (log out/in afterwards):  sudo usermod -aG ctrlmate \$USER"
+}
+
+post_upgrade() {
+  systemd-sysusers ctrlmate.conf >/dev/null 2>&1 || true
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl try-restart ctrlmated.service >/dev/null 2>&1 || true
+}
+
+pre_remove() {
+  systemctl disable --now ctrlmated.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  echo ":: State is kept in /var/lib/ctrlmate; remove it (and the ctrlmate user) manually if desired."
+}

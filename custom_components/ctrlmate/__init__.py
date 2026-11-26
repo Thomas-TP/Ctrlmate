@@ -1,76 +1,55 @@
-"""Ctrlmate Home Assistant 2026.11 Integration."""
+"""The Ctrlmate integration: local push control and telemetry for a PC."""
 
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.device_registry import (
-    CONNECTION_NETWORK_MAC,
-    EVENT_DEVICE_REGISTRY_UPDATED,
-    EventDeviceRegistryUpdatedData,
-)
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_CERT_FINGERPRINT, CONF_TOKEN, DOMAIN, PLATFORMS
 from .coordinator import CtrlmateCoordinator
 
 type CtrlmateConfigEntry = ConfigEntry[CtrlmateCoordinator]
+
+_CONNECTION_KEYS = (CONF_HOST, CONF_PORT, CONF_TOKEN, CONF_CERT_FINGERPRINT)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CtrlmateConfigEntry) -> bool:
     """Set up Ctrlmate from a config entry."""
     coordinator = CtrlmateCoordinator(hass, entry)
     entry.runtime_data = coordinator
+
+    # Raises ConfigEntryAuthFailed when the token is already revoked; an offline PC
+    # is fine (entities turn available when it connects, Wake-on-LAN keeps working).
     await coordinator.async_start()
 
-    # Pre-register the parent PC device so HA 2026.11 ChildDeviceInfo links cleanly
-    # and the setup wizard only asks for the Area (room) once for the PC.
-    device_reg = dr.async_get(hass)
-    host = coordinator.manifest.get("host", {})
-    connections = (
-        {(CONNECTION_NETWORK_MAC, coordinator.mac_address)}
-        if coordinator.mac_address
-        else set()
-    )
-    parent_device = device_reg.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, coordinator.device_id)},
-        connections=connections,
-        name=host.get("name", entry.title),
-        manufacturer=host.get("manufacturer", "Ctrlmate"),
-        model=host.get("model", "PC"),
-        sw_version=host.get("sw_version"),
-    )
-    coordinator.parent_device_id = parent_device.id
+    snapshot = {key: entry.data.get(key) for key in _CONNECTION_KEYS}
 
-    # Automatically mirror the parent PC's Area onto all component child devices
-    # whenever the user assigns or changes the PC's room.
-    @callback
-    def _sync_child_areas(event: Event[EventDeviceRegistryUpdatedData]) -> None:
-        if event.data.get("action") != "update":
-            return
-        if event.data.get("device_id") != coordinator.parent_device_id:
-            return
-        changes = event.data.get("changes", {})
-        if "area_id" not in changes:
-            return
-        parent = device_reg.async_get(coordinator.parent_device_id)
-        if parent is None:
-            return
-        for dev in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
-            if dev.id != parent.id and dev.area_id != parent.area_id:
-                device_reg.async_update_device(dev.id, area_id=parent.area_id)
+    async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+        # The coordinator itself rewrites the MAC address; only reload when
+        # something the connection depends on changed (reconfigure / reauth / zeroconf).
+        if any(entry.data.get(key) != value for key, value in snapshot.items()):
+            hass.config_entries.async_schedule_reload(entry.entry_id)
 
-    entry.async_on_unload(
-        hass.bus.async_listen(EVENT_DEVICE_REGISTRY_UPDATED, _sync_child_areas)
-    )
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CtrlmateConfigEntry) -> bool:
-    """Unload a Ctrlmate config entry cleanly."""
+    """Unload a Ctrlmate config entry."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    await entry.runtime_data.async_stop()
+    if unloaded:
+        await entry.runtime_data.async_stop()
     return unloaded
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: CtrlmateConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow deleting stale devices, never the PC or a component that still exists."""
+    coordinator = entry.runtime_data
+    keep = coordinator.expected_child_identifiers() | {(DOMAIN, coordinator.device_id)}
+    return not (device_entry.identifiers & keep)

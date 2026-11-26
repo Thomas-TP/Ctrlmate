@@ -4,15 +4,15 @@
 //! JSON schema `light` entities (`rgb` + `color_temp` 2000K–6500K), canonical °C sensors,
 //! `via_device` Child Devices, unified LWT availability, and strict Ctrlmate permission checks.
 
-use crate::server::AppState;
+use crate::state::AppState;
 use ctrlmate_protocol::{
     ControlCommand, DeviceManifest, EntityDescriptor, EntityPlatform, EntityState, EntityValue,
-    MqttConfig, RgbColor, WireMessage, MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN,
+    MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN, MqttConfig, RgbColor, WireMessage,
 };
 use rumqttc::{AsyncClient, Event, Incoming, LastWill, MqttOptions, QoS, Transport};
-use serde_json::{json, Map, Value};
-use std::sync::atomic::Ordering;
+use serde_json::{Map, Value, json};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
@@ -55,12 +55,12 @@ pub fn spawn_mqtt_worker(state: Arc<AppState>, mut mqtt_cfg_rx: watch::Receiver<
 async fn set_connected(state: &Arc<AppState>, connected: bool) {
     let prev = state.mqtt_connected.swap(connected, Ordering::Relaxed);
     if prev != connected {
-        let _ = state.ui_tx.send(state.snapshot().await);
+        state.notify_ui().await;
     }
 }
 
 async fn run_mqtt_session(state: Arc<AppState>, cfg: MqttConfig) {
-    let manifest = state.latest_manifest.read().await.clone();
+    let manifest = state.manifest.read().await.clone();
     let dev_id = sanitize_id(&manifest.host.device_id);
     let base_topic = format!("ctrlmate/{dev_id}");
     let avail_topic = format!("{base_topic}/status");
@@ -69,7 +69,12 @@ async fn run_mqtt_session(state: Arc<AppState>, cfg: MqttConfig) {
     let mut opts = MqttOptions::new(client_id, cfg.host.trim(), cfg.port);
     opts.set_keep_alive(Duration::from_secs(30));
     opts.set_clean_session(true);
-    opts.set_last_will(LastWill::new(&avail_topic, "offline", QoS::AtLeastOnce, true));
+    opts.set_last_will(LastWill::new(
+        &avail_topic,
+        "offline",
+        QoS::AtLeastOnce,
+        true,
+    ));
 
     if let Some(user) = cfg.username.as_deref().filter(|s| !s.is_empty()) {
         opts.set_credentials(user, cfg.password.as_deref().unwrap_or_default());
@@ -96,11 +101,13 @@ async fn run_mqtt_session(state: Arc<AppState>, cfg: MqttConfig) {
                             .subscribe(format!("{base_topic}/cmd/#"), QoS::AtLeastOnce)
                             .await;
 
-                        let cur_manifest = state.latest_manifest.read().await.clone();
+                        let cur_manifest = state.manifest.read().await.clone();
                         publish_discovery(&client, &cfg.discovery_prefix, &base_topic, &cur_manifest).await;
 
-                        let cur_states = state.latest_states.read().await.clone();
-                        publish_states(&client, &base_topic, &cur_states).await;
+                        if state.telemetry_allowed() {
+                            let cur_states = state.states.read().await.clone();
+                            publish_states(&client, &base_topic, &cur_states).await;
+                        }
                     }
                     Ok(Event::Incoming(Incoming::Publish(p))) => {
                         let prefix = format!("{base_topic}/cmd/");
@@ -122,12 +129,19 @@ async fn run_mqtt_session(state: Arc<AppState>, cfg: MqttConfig) {
                         publish_discovery(&client, &cfg.discovery_prefix, &base_topic, &new_manifest).await;
                     }
                     Ok(WireMessage::StateBatch { states }) => {
-                        if state.mqtt_connected.load(Ordering::Relaxed) {
+                        // `telemetry = false` means no MQTT state publishing either.
+                        if state.telemetry_allowed() && state.mqtt_connected.load(Ordering::Relaxed) {
                             publish_states(&client, &base_topic, &states).await;
                         }
                     }
                     Ok(_) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Missed deltas: republish everything instead of leaving stale values.
+                        if state.telemetry_allowed() && state.mqtt_connected.load(Ordering::Relaxed) {
+                            let cur_states = state.states.read().await.clone();
+                            publish_states(&client, &base_topic, &cur_states).await;
+                        }
+                    }
                     Err(_) => break,
                 }
             }
@@ -153,7 +167,11 @@ async fn publish_discovery(
 
     // 1. Parent PC Device Discovery payload
     let mut parent_cmps = Map::new();
-    for ent in manifest.entities.iter().filter(|e| e.exposed && e.child_device_id.is_none()) {
+    for ent in manifest
+        .entities
+        .iter()
+        .filter(|e| e.exposed && e.child_device_id.is_none())
+    {
         if let Some(cmp) = build_component_payload(&host_ident, base_topic, ent) {
             parent_cmps.insert(ent.id.clone(), cmp);
         }
@@ -179,7 +197,9 @@ async fn publish_discovery(
     });
     let parent_topic = format!("{prefix}/device/{host_ident}/config");
     if let Ok(body) = serde_json::to_string(&parent_payload) {
-        let _ = client.publish(parent_topic, QoS::AtLeastOnce, true, body).await;
+        let _ = client
+            .publish(parent_topic, QoS::AtLeastOnce, true, body)
+            .await;
     }
 
     // 2. Child Devices Discovery payloads (linked via `via_device` to parent PC)
@@ -214,7 +234,9 @@ async fn publish_discovery(
         });
         let child_topic = format!("{prefix}/device/{child_ident}/config");
         if let Ok(body) = serde_json::to_string(&child_payload) {
-            let _ = client.publish(child_topic, QoS::AtLeastOnce, true, body).await;
+            let _ = client
+                .publish(child_topic, QoS::AtLeastOnce, true, body)
+                .await;
         }
     }
 
@@ -355,14 +377,23 @@ async fn publish_states(client: &AsyncClient, base_topic: &str, states: &[Entity
                 }
                 body.to_string()
             }
-            EntityValue::Update(u) => json!({
-                "installed_version": u.installed_version,
-                "latest_version": u.latest_version,
-                "title": "OS Updates",
-                "in_progress": u.in_progress,
-                "release_summary": u.pending_titles.join("\n"),
-            })
-            .to_string(),
+            EntityValue::Update(u) => {
+                // HA's MQTT update entity needs a latest_version: equal to the installed one
+                // unless a completed scan found pending updates.
+                let latest = match u.pending_count {
+                    Some(n) if n > 0 => format!("{} (+{n} pending)", u.installed_version),
+                    _ => u.installed_version.clone(),
+                };
+                let summary: String = u.titles.join("\n").chars().take(255).collect();
+                json!({
+                    "installed_version": u.installed_version,
+                    "latest_version": latest,
+                    "title": "OS Updates",
+                    "in_progress": u.in_progress,
+                    "release_summary": summary,
+                })
+                .to_string()
+            }
             EntityValue::Unavailable => continue,
         };
 
@@ -372,7 +403,7 @@ async fn publish_states(client: &AsyncClient, base_topic: &str, states: &[Entity
 
 async fn handle_mqtt_command(state: &Arc<AppState>, entity_id: &str, payload: &str) {
     let platform = {
-        let manifest = state.latest_manifest.read().await;
+        let manifest = state.manifest.read().await;
         manifest
             .entities
             .iter()
@@ -404,15 +435,21 @@ async fn handle_mqtt_command(state: &Arc<AppState>, entity_id: &str, payload: &s
             let color_temp_kelvin = v
                 .get("color_temp_kelvin")
                 .and_then(Value::as_u64)
-                .map(|k| k.clamp(u64::from(MIN_COLOR_TEMP_KELVIN), u64::from(MAX_COLOR_TEMP_KELVIN)) as u16)
+                .map(|k| {
+                    k.clamp(
+                        u64::from(MIN_COLOR_TEMP_KELVIN),
+                        u64::from(MAX_COLOR_TEMP_KELVIN),
+                    ) as u16
+                })
                 .or_else(|| {
                     v.get("color_temp")
                         .and_then(Value::as_u64)
                         .filter(|&mired| mired > 0)
                         .map(|mired| {
-                            (1_000_000 / mired)
-                                .clamp(u64::from(MIN_COLOR_TEMP_KELVIN), u64::from(MAX_COLOR_TEMP_KELVIN))
-                                as u16
+                            (1_000_000 / mired).clamp(
+                                u64::from(MIN_COLOR_TEMP_KELVIN),
+                                u64::from(MAX_COLOR_TEMP_KELVIN),
+                            ) as u16
                         })
                 });
             let transition_ms = v
@@ -452,13 +489,20 @@ async fn handle_mqtt_command(state: &Arc<AppState>, entity_id: &str, payload: &s
         _ => return,
     };
 
-    if let Err(err) = state.execute_command(cmd, true).await {
-        warn!("MQTT command rejected for {entity_id}: {err}");
+    let result = state.execute_command(cmd, true).await;
+    if !result.ok {
+        warn!("MQTT command rejected for {entity_id}: {}", result.code);
     }
 }
 
 fn sanitize_id(raw: &str) -> String {
     raw.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
         .collect()
 }

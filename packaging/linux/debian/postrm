@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+remove | purge)
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+if [ "$1" = "purge" ]; then
+    rm -rf /var/lib/ctrlmate /etc/ctrlmate
+    if getent passwd ctrlmate >/dev/null 2>&1; then
+        deluser --system ctrlmate >/dev/null 2>&1 || true
+    fi
+    if getent group ctrlmate >/dev/null 2>&1; then
+        delgroup --system ctrlmate >/dev/null 2>&1 || true
+    fi
+fi
+
+exit 0

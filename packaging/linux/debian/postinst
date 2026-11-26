@@ -1,0 +1,44 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+configure)
+    if ! getent group ctrlmate >/dev/null 2>&1; then
+        addgroup --system ctrlmate >/dev/null
+    fi
+    if ! getent passwd ctrlmate >/dev/null 2>&1; then
+        adduser --system --ingroup ctrlmate --no-create-home \
+            --home /var/lib/ctrlmate --shell /usr/sbin/nologin \
+            --gecos "Ctrlmate hardware daemon" ctrlmate >/dev/null
+    fi
+
+    # The session agent and the desktop app read /var/lib/ctrlmate/ipc.token (group ctrlmate, 0640).
+    # Add the user who ran `sudo apt install` so it works without a manual step.
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && getent passwd "$SUDO_USER" >/dev/null 2>&1; then
+        adduser "$SUDO_USER" ctrlmate >/dev/null 2>&1 || true
+        echo "ctrlmate: added $SUDO_USER to the 'ctrlmate' group (log out and back in to apply)."
+    else
+        echo "ctrlmate: add your user to the 'ctrlmate' group:  sudo usermod -aG ctrlmate \"\$USER\""
+    fi
+
+    modprobe i2c-dev >/dev/null 2>&1 || true
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+        udevadm trigger --subsystem-match=hidraw --subsystem-match=i2c-dev >/dev/null 2>&1 || true
+    fi
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl enable ctrlmated.service >/dev/null 2>&1 || true
+        # Restart on upgrade, start on first install.
+        systemctl restart ctrlmated.service >/dev/null 2>&1 || true
+    fi
+    ;;
+abort-upgrade | abort-remove | abort-deconfigure) ;;
+*)
+    echo "postinst called with unknown argument '$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

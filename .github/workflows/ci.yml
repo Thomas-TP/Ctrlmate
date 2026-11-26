@@ -4,45 +4,263 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  workflow_call: # reused as the quality gate of release.yml
+
+# Least privilege: jobs only read the repository. Release/attestation permissions live in release.yml.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # Pinned tool versions (bump deliberately, together with rust-toolchain.toml).
+  BUN_VERSION: "1.4.4"
+  DOTNET_VERSION: "8.0.x"
+  PYTHON_VERSION: "3.13"
+
+# Action pinning policy: third-party actions are pinned to an exact major tag and kept current by
+# Dependabot (.github/dependabot.yml). For a stricter supply chain, replace each tag with the full
+# commit SHA that Dependabot proposes (it keeps the "# vX" comment up to date).
 
 jobs:
-  rust-core:
-    name: Rust Core (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-22.04]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev libhidapi-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run Rust workspace unit tests
-        run: cargo test -p ctrlmate-protocol -p ctrlmate-rgb -p ctrlmate-cooling -p ctrlmate-hal -p ctrlmate-daemon
-
-  desktop-frontend:
-    name: Desktop UI (React 19 + TS + Tailwind v4)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --cwd apps/desktop
-      - run: bun run --cwd apps/desktop build
-
-  home-assistant-integration:
-    name: Home Assistant 2026.11 Integration
-    runs-on: ubuntu-22.04
+  consistency:
+    name: Version and packaging consistency
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - name: Check Python syntax & JSON manifests
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Version drift (Cargo workspace is the single source)
+        run: python scripts/sync_version.py --check
+      - name: udev rules match the supported VID:PID tables
+        run: python scripts/check_udev_rules.py
+      - name: Shell syntax
         run: |
-          python3 -m py_compile custom_components/ctrlmate/*.py
-          python3 -c "import json, glob; [json.load(open(p)) for p in ['hacs.json'] + glob.glob('custom_components/ctrlmate/**/*.json', recursive=True)]"
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          bash -n packaging/linux/pack-linux.sh packaging/linux/debian/postinst packaging/linux/debian/prerm packaging/linux/debian/postrm
+          shellcheck -S warning packaging/linux/pack-linux.sh packaging/linux/debian/postinst packaging/linux/debian/prerm packaging/linux/debian/postrm
+      - name: PowerShell parse check
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem packaging/windows/*.ps1) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { Write-Error "$($f.Name): $_" }; exit 1 }
+          }
+      - name: Cargo.lock is tracked and current
+        run: |
+          git ls-files --error-unmatch Cargo.lock
+          cargo metadata --locked --format-version 1 > /dev/null
+
+  frontend:
+    name: Front end (typecheck, lint, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('apps/desktop/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: Install (frozen lockfile)
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: apps/desktop
+        run: bun run typecheck
+      - name: Lint
+        working-directory: apps/desktop
+        run: bun run lint
+      - name: Unit tests
+        working-directory: apps/desktop
+        run: bun run test
+      - name: Build
+        working-directory: apps/desktop
+        run: bun run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist
+          retention-days: 3
+          if-no-files-found: error
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    needs: frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain from rust-toolchain.toml
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+      - name: Linux system dependencies (Tauri v2 / webkit2gtk 4.1, hidraw, udev)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libudev-dev libhidapi-dev \
+            libdbus-1-dev libssl-dev
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+      - name: Build release binaries (daemon, agent, Tauri desktop)
+        run: cargo build --release --locked -p ctrlmate-daemon -p ctrlmate-agent -p ctrlmate-desktop
+
+  supply-chain:
+    name: Dependency audit (cargo-deny, cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-audit
+      - name: cargo deny (advisories, licenses, bans, sources)
+        run: cargo deny --locked check
+      - name: cargo audit
+        run: cargo audit --deny warnings
+
+  lhm-bridge:
+    name: .NET deep-hardware bridge (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore (locked) and build
+        run: |
+          dotnet restore crates/ctrlmate-lhm-bridge/Ctrlmate.LhmBridge.csproj
+          dotnet build crates/ctrlmate-lhm-bridge/Ctrlmate.LhmBridge.csproj -c Release --no-restore -warnaserror
+
+  home-assistant:
+    name: Home Assistant integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hassfest
+        uses: home-assistant/actions/hassfest@master # upstream publishes only the rolling branch
+      - name: HACS validation
+        uses: hacs/action@main # upstream publishes only the rolling branch
+        with:
+          category: integration
+          ignore: brands
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tests/ha/requirements_test.txt
+      - name: Install test dependencies
+        run: pip install -r tests/ha/requirements_test.txt
+      - name: Ruff (lint + format check)
+        run: |
+          pip install ruff
+          ruff check custom_components tests/ha
+          ruff format --check custom_components tests/ha
+      - name: pytest
+        run: pytest tests/ha -q
+
+  packaging-linux:
+    name: Package smoke (deb, rpm)
+    needs: [frontend, consistency]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-pkg
+      - name: Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libudev-dev libhidapi-dev \
+            libdbus-1-dev libssl-dev rpm lintian
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist
+      - run: cargo build --release --locked -p ctrlmate-daemon -p ctrlmate-agent -p ctrlmate-desktop
+      - name: Build deb + rpm
+        run: packaging/linux/pack-linux.sh --formats deb,rpm
+      - name: Inspect deb
+        run: |
+          deb=$(ls dist-release/linux/*.deb)
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          dpkg-deb -c "$deb" | grep -q 'usr/lib/udev/rules.d/99-ctrlmate.rules'
+          dpkg-deb -c "$deb" | grep -q 'usr/lib/systemd/system/ctrlmated.service'
+          dpkg-deb -c "$deb" | grep -q 'usr/bin/ctrlmate-agent'
+          lintian --fail-on error --suppress-tags no-copyright-file,binary-without-manpage,no-changelog,statically-linked-binary,embedded-library "$deb" || true
+      - name: Inspect rpm
+        run: |
+          rpm=$(ls dist-release/linux/*.rpm)
+          rpm -qpi "$rpm"
+          rpm -qpl "$rpm"
+          rpm -qp --requires "$rpm"
+          rpm -qp --scripts "$rpm" | grep -q 'useradd'
+      - name: Verify the unit file
+        run: |
+          sudo install -Dm755 target/release/ctrlmated /usr/bin/ctrlmated
+          sudo install -Dm755 target/release/ctrlmate-agent /usr/bin/ctrlmate-agent
+          systemd-analyze verify packaging/linux/ctrlmated.service
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-smoke
+          path: dist-release/linux
+          retention-days: 3
+
+  packaging-arch:
+    name: PKGBUILD validation (Arch Linux container)
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm git namcap python
+      - uses: actions/checkout@v4
+      - name: Validate PKGBUILD
+        run: |
+          useradd -m builder
+          chown -R builder .
+          git config --global --add safe.directory "$PWD"
+          cd packaging/linux
+          su builder -c 'makepkg --printsrcinfo' > /tmp/SRCINFO
+          cat /tmp/SRCINFO
+          grep -q "pkgver = $(python ../../scripts/sync_version.py --print)" /tmp/SRCINFO
+          su builder -c 'namcap PKGBUILD' || true
+
+  packaging-nix:
+    name: Nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Flake check (builds ctrlmated and ctrlmate-agent from the tracked Cargo.lock)
+        run: nix flake check --print-build-logs

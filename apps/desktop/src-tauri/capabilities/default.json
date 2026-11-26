@@ -1,17 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Ctrlmate main window",
+  "description": "Minimal capability of the main window: events and the app's own commands. No shell, fs or http plugin.",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:window:default",
-    "core:window:allow-start-dragging",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-close"
-  ]
+  "permissions": ["core:default"]
 }

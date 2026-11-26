@@ -1,152 +1,325 @@
-use ctrlmate_protocol::DEFAULT_IPC_PORT;
-use serde::Serialize;
-use std::net::{SocketAddr, TcpStream};
-use std::process::Command;
-use std::time::Duration;
-use tauri::Manager;
-use velopack::{sources, UpdateCheck, UpdateManager};
+//! Ctrlmate desktop (Tauri v2): UI only. The webview never talks to `ctrlmated` and never sees the
+//! IPC token: it calls the commands below, and receives daemon events through Tauri events.
+//!
+//! Commands: `app_info`, `ipc_request`, `connection_status`, `daemon_reconnect`, `service_status`,
+//! `service_install_or_upgrade`, `agent_install_autostart`, `app_update_check`,
+//! `app_update_install`, `app_settings_get`, `app_settings_set`, `set_tray_labels`,
+//! `set_window_theme`, `window_hide`, `app_quit`.
+//! Events: `daemon://event`, `daemon://connection`, `app-update://progress`.
 
-const GITHUB_REPO_URL: &str = "https://github.com/Thomas-TP/Ctrlmate";
+mod client;
+#[cfg(debug_assertions)]
+mod dev_daemon;
+mod error;
+mod service;
+mod settings;
+mod token;
+mod updater;
+mod ws;
+
+use client::{IpcClient, IpcResponse};
+use ctrlmate_protocol::DEFAULT_IPC_PORT;
+use error::{ErrorCode, IpcError};
+use serde::Serialize;
+use serde_json::Value;
+use service::{AutostartOutcome, ElevatedOutcome, ServiceAction, ServiceStatus};
+use settings::AppSettings;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent, Wry};
+use updater::{AppUpdateStatus, PendingUpdate};
+use ws::{ConnectionHub, ConnectionStatus};
+
+const MAIN_WINDOW: &str = "main";
+const TRAY_ID: &str = "main-tray";
+const MENU_SHOW: &str = "show";
+const MENU_QUIT: &str = "quit";
+const ENV_PORT: &str = "CTRLMATE_IPC_PORT";
+
+struct TrayItems {
+    show: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+pub struct AppState {
+    client: Arc<IpcClient>,
+    hub: Arc<ConnectionHub>,
+    settings: Mutex<AppSettings>,
+    settings_dir: PathBuf,
+    pending_update: PendingUpdate,
+    tray: Mutex<Option<TrayItems>>,
+    #[cfg(debug_assertions)]
+    dev_daemon: dev_daemon::DevDaemon,
+}
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AppUpdateStatus {
-    pub current_version: String,
-    pub installed_via_velopack: bool,
-    pub update_available: bool,
-    pub latest_version: Option<String>,
-    pub message: String,
+struct AppInfo {
+    version: &'static str,
+    platform: &'static str,
+    arch: &'static str,
+    debug: bool,
+    ipc_port: u16,
+    /// Which token source worked last (`env`, `user`, `system`, `dev`); never the token itself.
+    token_source: Option<token::TokenSource>,
+    update_channel: &'static str,
+}
+
+fn ipc_port() -> u16 {
+    std::env::var(ENV_PORT)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_IPC_PORT)
 }
 
 #[tauri::command]
-fn get_ipc_endpoint() -> String {
-    format!("http://127.0.0.1:{DEFAULT_IPC_PORT}")
-}
-
-#[tauri::command]
-async fn check_app_update() -> Result<AppUpdateStatus, String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
-    tauri::async_runtime::spawn_blocking(move || {
-        let source = sources::GithubSource::new(GITHUB_REPO_URL, None, false);
-        let um = match UpdateManager::new(source, None, None) {
-            Ok(um) => um,
-            Err(_) => {
-                return Ok(AppUpdateStatus {
-                    current_version: current,
-                    installed_via_velopack: false,
-                    update_available: false,
-                    latest_version: None,
-                    message: "Mode portable : installez Ctrlmate via Ctrlmate-win-Setup.exe (Velopack) pour activer les mises à jour delta automatiques.".into(),
-                });
-            }
-        };
-
-        match um.check_for_updates() {
-            Ok(UpdateCheck::UpdateAvailable(info)) => {
-                let target = info.TargetFullRelease.Version.clone();
-                Ok(AppUpdateStatus {
-                    current_version: current,
-                    installed_via_velopack: true,
-                    update_available: true,
-                    latest_version: Some(target.clone()),
-                    message: format!("Ctrlmate v{target} est disponible (mise à jour Velopack)."),
-                })
-            }
-            Ok(UpdateCheck::NoUpdateAvailable) | Ok(UpdateCheck::RemoteIsEmpty) => {
-                Ok(AppUpdateStatus {
-                    current_version: current.clone(),
-                    installed_via_velopack: true,
-                    update_available: false,
-                    latest_version: Some(current),
-                    message: "Ctrlmate est déjà à jour.".into(),
-                })
-            }
-            Err(err) => Ok(AppUpdateStatus {
-                current_version: current,
-                installed_via_velopack: true,
-                update_available: false,
-                latest_version: None,
-                message: format!("Vérification Velopack impossible : {err}"),
-            }),
-        }
-    })
-    .await
-    .map_err(|e| format!("Update check task failed: {e}"))?
-}
-
-#[tauri::command]
-async fn install_app_update() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let source = sources::GithubSource::new(GITHUB_REPO_URL, None, false);
-        let um = UpdateManager::new(source, None, None)
-            .map_err(|e| format!("Velopack non initialisé (installation requise) : {e}"))?;
-
-        match um.check_for_updates().map_err(|e| e.to_string())? {
-            UpdateCheck::UpdateAvailable(info) => {
-                um.download_updates(&info, None)
-                    .map_err(|e| format!("Téléchargement échoué : {e}"))?;
-                um.apply_updates_and_restart(&*info)
-                    .map_err(|e| format!("Application de la mise à jour échouée : {e}"))?;
-                Ok("Mise à jour appliquée — redémarrage en cours…".into())
-            }
-            _ => Ok("Aucune mise à jour disponible.".into()),
-        }
-    })
-    .await
-    .map_err(|e| format!("Update install task failed: {e}"))?
-}
-
-/// Ensures `ctrlmated` is running locally if not already managed as a Windows/systemd service.
-fn ensure_local_daemon_running() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], DEFAULT_IPC_PORT));
-    if TcpStream::connect_timeout(&addr, Duration::from_millis(180)).is_ok() {
-        return;
+fn app_info(state: State<'_, AppState>) -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        platform: service::platform(),
+        arch: std::env::consts::ARCH,
+        debug: cfg!(debug_assertions),
+        ipc_port: state.client.port(),
+        token_source: state.client.last_source(),
+        update_channel: updater::channel(),
     }
+}
 
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let Some(dir) = exe.parent() else {
-        return;
-    };
+/// The only way for the webview to reach the daemon: allowlisted `/ipc/*` routes.
+#[tauri::command]
+async fn ipc_request(
+    state: State<'_, AppState>,
+    method: String,
+    path: String,
+    body: Option<Value>,
+) -> Result<IpcResponse, IpcError> {
+    state.client.request(&method, &path, body).await
+}
 
-    #[cfg(target_os = "windows")]
-    let daemon_path = dir.join("ctrlmated.exe");
-    #[cfg(not(target_os = "windows"))]
-    let daemon_path = dir.join("ctrlmated");
+#[tauri::command]
+fn connection_status(state: State<'_, AppState>) -> ConnectionStatus {
+    state.hub.status()
+}
 
-    if !daemon_path.exists() {
-        return;
+#[tauri::command]
+fn daemon_reconnect(state: State<'_, AppState>) {
+    state.hub.reconnect_now();
+}
+
+#[tauri::command]
+async fn service_status(state: State<'_, AppState>) -> Result<ServiceStatus, IpcError> {
+    let version = env!("CARGO_PKG_VERSION");
+    match state.client.request("GET", "/ipc/snapshot", None).await {
+        Ok(resp) if resp.status == 200 => {
+            Ok(service::build_status(version, resp.body.get("service")))
+        }
+        Ok(_) => Err(IpcError::new(ErrorCode::DaemonProtocol)),
+        Err(e) if e.code == ErrorCode::DaemonOffline => Ok(service::build_status(version, None)),
+        Err(e) => Err(e),
     }
+}
 
-    let mut cmd = Command::new(daemon_path);
-    #[cfg(target_os = "windows")]
+/// Elevated install / upgrade of the Windows service. The UI shows its own confirmation first.
+#[tauri::command]
+async fn service_install_or_upgrade(action: ServiceAction) -> Result<ElevatedOutcome, IpcError> {
+    service::install_or_upgrade(action).await
+}
+
+#[tauri::command]
+async fn agent_install_autostart() -> Result<AutostartOutcome, IpcError> {
+    service::install_agent_autostart().await
+}
+
+#[tauri::command]
+async fn app_update_check(state: State<'_, AppState>) -> Result<AppUpdateStatus, IpcError> {
+    updater::check(&state.pending_update).await
+}
+
+/// Applies the update found by the last `app_update_check`, then restarts. The UI confirms first.
+#[tauri::command]
+async fn app_update_install(app: AppHandle, state: State<'_, AppState>) -> Result<(), IpcError> {
+    updater::install(app, &state.pending_update).await
+}
+
+#[tauri::command]
+fn app_settings_get(state: State<'_, AppState>) -> AppSettings {
+    state.settings.lock().map(|g| *g).unwrap_or_default()
+}
+
+#[tauri::command]
+fn app_settings_set(state: State<'_, AppState>, settings: AppSettings) -> Result<(), IpcError> {
+    settings::save(&state.settings_dir, &settings)
+        .map_err(|e| IpcError::with_detail(ErrorCode::Internal, e.to_string()))?;
+    if let Ok(mut g) = state.settings.lock() {
+        *g = settings;
+    }
+    Ok(())
+}
+
+/// Tray menu labels are UI text, so the webview supplies them (translated) on start and whenever
+/// the language changes.
+#[tauri::command]
+fn set_tray_labels(state: State<'_, AppState>, show: String, quit: String) {
+    if let Ok(g) = state.tray.lock()
+        && let Some(items) = g.as_ref()
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        let _ = items.show.set_text(show);
+        let _ = items.quit.set_text(quit);
     }
-    let _ = cmd.spawn();
+}
+
+/// Aligns the native title bar with the in-app theme override. `None` follows the system.
+#[tauri::command]
+fn set_window_theme(app: AppHandle, theme: Option<String>) {
+    let theme = match theme.as_deref() {
+        Some("light") => Some(tauri::Theme::Light),
+        Some("dark") => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = w.set_theme(theme);
+    }
+}
+
+#[tauri::command]
+fn window_hide(app: AppHandle) {
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn app_quit(app: AppHandle) {
+    app.exit(0);
+}
+
+fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+fn build_tray(app: &tauri::App) -> tauri::Result<TrayItems> {
+    // Provisional labels until the webview sends the translated ones (`set_tray_labels`).
+    let show = MenuItem::with_id(app, MENU_SHOW, "Ctrlmate", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, MENU_QUIT, "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+        .tooltip("Ctrlmate")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            MENU_SHOW => show_main(app),
+            MENU_QUIT => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(TrayItems { show, quit })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    ensure_local_daemon_running();
-
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        // Single instance must be the first plugin.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app);
+        }))
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+            let settings_dir = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("ctrlmate-desktop"));
+            let settings = settings::load(&settings_dir);
+            let client = Arc::new(IpcClient::new(ipc_port())?);
+            let hub = ConnectionHub::new();
+
+            let state = AppState {
+                client: client.clone(),
+                hub: hub.clone(),
+                settings: Mutex::new(settings),
+                settings_dir,
+                pending_update: PendingUpdate::default(),
+                tray: Mutex::new(None),
+                #[cfg(debug_assertions)]
+                dev_daemon: dev_daemon::DevDaemon::default(),
+            };
+            #[cfg(debug_assertions)]
+            state.dev_daemon.spawn_if_enabled();
+            match build_tray(app) {
+                Ok(items) => {
+                    if let Ok(mut g) = state.tray.lock() {
+                        *g = Some(items);
+                    }
+                }
+                Err(e) => tracing::warn!("tray icon unavailable: {e}"),
             }
+            app.manage(state);
+
+            if !settings.start_hidden {
+                show_main(app.handle());
+            }
+            ws::spawn(app.handle().clone(), hub, client);
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == MAIN_WINDOW
+            {
+                let to_tray = window
+                    .app_handle()
+                    .try_state::<AppState>()
+                    .and_then(|s| s.settings.lock().ok().map(|g| g.close_to_tray))
+                    .unwrap_or(true);
+                if to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            get_ipc_endpoint,
-            check_app_update,
-            install_app_update
+            app_info,
+            ipc_request,
+            connection_status,
+            daemon_reconnect,
+            service_status,
+            service_install_or_upgrade,
+            agent_install_autostart,
+            app_update_check,
+            app_update_install,
+            app_settings_get,
+            app_settings_set,
+            set_tray_labels,
+            set_window_theme,
+            window_hide,
+            app_quit,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Ctrlmate desktop application");
+        .build(tauri::generate_context!())
+        .expect("error while building the Ctrlmate desktop application");
+
+    app.run(|handle, event| {
+        if let RunEvent::Exit = event {
+            #[cfg(debug_assertions)]
+            if let Some(state) = handle.try_state::<AppState>() {
+                state.dev_daemon.kill();
+            }
+            #[cfg(not(debug_assertions))]
+            let _ = handle;
+        }
+    });
 }

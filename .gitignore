@@ -1,14 +1,15 @@
 # Rust / Cargo
 /target
 **/target
-Cargo.lock
-!apps/desktop/src-tauri/Cargo.lock
+# Cargo.lock IS tracked (application workspace, reproducible builds)
 
 # Node / Bun / Frontend
 node_modules/
 dist/
 dist-stage/
 dist-velopack/
+dist-release/
+*.tsbuildinfo
 build/
 .vite/
 *.local
@@ -33,6 +34,9 @@ __pycache__/
 # Local runtime secrets & dev certs
 *.pem
 *.key
+!packaging/**/*.pem
+*.pfx
+*.snk
 .ctrlmate-dev/
 .env
 .env.*

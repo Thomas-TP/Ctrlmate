@@ -1,29 +1,61 @@
-# Ctrlmate udev rules — non-root USB HID access for native PC RGB & AIO controllers
-# Install to /etc/udev/rules.d/99-ctrlmate.rules and run:
-#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# Ctrlmate udev rules. Installed to /usr/lib/udev/rules.d/99-ctrlmate.rules.
+#
+# Scope: ONLY the exact VID:PID pairs Ctrlmate drives, no blanket vendor access.
+# Access goes to the `ctrlmate` group (the ctrlmated service user), not to every
+# logged-in user. Keep this table in sync with the Rust sources; CI enforces it
+# (scripts/check_udev_rules.py).
+#
+#  VID   PID   Device                                     Source
+#  1e71  2007  NZXT Kraken X3 (X53/X63/X73)               crates/ctrlmate-hal/src/kraken.rs
+#  1e71  2014  NZXT Kraken X3 (X53/X63/X73)               crates/ctrlmate-hal/src/kraken.rs
+#  1e71  3008  NZXT Kraken Z3 (Z53/Z63/Z73)               crates/ctrlmate-hal/src/kraken.rs
+#  1e71  300c  NZXT Kraken Elite (2023)                   crates/ctrlmate-hal/src/kraken.rs
+#  1e71  300e  NZXT Kraken 2023 (240/280/360)             crates/ctrlmate-hal/src/kraken.rs
+#  1e71  3012  NZXT Kraken Elite RGB (2024)               crates/ctrlmate-hal/src/kraken.rs
+#  1e71  3014  NZXT Kraken Plus (2024)                    crates/ctrlmate-hal/src/kraken.rs
+#  1e71  2012  NZXT RGB Controller (2023)                 crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2021  NZXT RGB Controller (2023)                 crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2001  NZXT HUE 2                                 crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2002  NZXT HUE 2 Ambient                         crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2006  NZXT Smart Device V2                       crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  200d  NZXT Smart Device V2                       crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  200f  NZXT Smart Device V2                       crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2009  NZXT RGB & Fan Controller                  crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  200e  NZXT RGB & Fan Controller                  crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  1e71  2010  NZXT RGB & Fan Controller                  crates/ctrlmate-rgb/src/backends/nzxt_rgb.rs
+#  048d  5702  Gigabyte RGB Fusion 2 (ITE IT5702)         crates/ctrlmate-rgb/src/backends/gigabyte_ite.rs
+#  048d  8297  Gigabyte RGB Fusion 2 (ITE IT8297)         crates/ctrlmate-rgb/src/backends/gigabyte_ite.rs
+#  048d  5711  Gigabyte RGB Fusion (ITE IT5711)           crates/ctrlmate-rgb/src/backends/gigabyte_ite.rs
 
-# NZXT (Kraken AIO, Smart Device, RGB & Fan Controllers)
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", MODE="0660", TAG+="uaccess"
+ACTION=="remove", GOTO="ctrlmate_end"
 
-# Gigabyte / ITE Tech (IT5701 / IT5702 Motherboard ARGB Controllers)
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2007", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2014", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="3008", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="300c", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="300e", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="3012", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="3014", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2012", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2021", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2001", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2002", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2006", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="200d", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="200f", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2009", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="200e", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="2010", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="5702", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="8297", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="5711", GROUP="ctrlmate", MODE="0660"
 
-# ASUS Aura USB Controllers
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b05", MODE="0660", TAG+="uaccess"
+# Motherboard SMBus adapters only (AMD PIIX4 / Intel I801) for ENE DRAM RGB.
+# GPU, DDC and other I2C buses are deliberately NOT matched: the i2c-dev node
+# of an SMBus controller can write DIMM SPD EEPROMs, so access is limited to
+# the `ctrlmate` group and to these two adapter families. The match is on the
+# adapter name, so it does not depend on a distro-specific `i2c` group.
+SUBSYSTEM=="i2c-dev", ATTR{name}=="SMBus PIIX4 adapter*", GROUP="ctrlmate", MODE="0660"
+SUBSYSTEM=="i2c-dev", ATTR{name}=="SMBus I801 adapter*", GROUP="ctrlmate", MODE="0660"
 
-# Corsair Lighting / Commander / Hydro Hubs
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1b1c", MODE="0660", TAG+="uaccess"
-
-# Lian Li Uni Fan / Galahad Controllers
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0cf2", MODE="0660", TAG+="uaccess"
-
-# MSI Mystic Light USB Controllers
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1462", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0db0", MODE="0660", TAG+="uaccess"
-
-# Aquacomputer USB Controllers
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c70", MODE="0660", TAG+="uaccess"
-
-# Motherboard SMBus / I2C (AMD PIIX4 & Intel I801) for native DDR4/DDR5 ENE DRAM RGB (G.Skill Trident Z5)
-SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660", TAG+="uaccess"
+LABEL="ctrlmate_end"

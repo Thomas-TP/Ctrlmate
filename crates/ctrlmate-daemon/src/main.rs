@@ -1,280 +1,210 @@
 mod auth;
+mod commands;
 mod config;
+mod datadir;
+mod hw;
+mod ipc;
+mod ipc_token;
+mod lan;
 mod mdns;
 mod mqtt;
-mod server;
+mod notify;
+mod runtime;
+mod sampler;
+mod scripts;
+mod sensors;
+mod sessions;
+mod state;
 mod tls;
 mod win_service;
 
 use anyhow::Result;
 use clap::Parser;
-use ctrlmate_hal::smart_poll::SmartPoller;
 use ctrlmate_hal::HardwareCollector;
 use ctrlmate_protocol::{DEFAULT_HA_PORT, DEFAULT_IPC_PORT};
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto::Builder as HyperBuilder;
-use hyper_util::service::TowerToHyperService;
-use std::collections::HashSet;
-use std::net::SocketAddr;
+use runtime::{Hooks, RunOptions};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::sync::{broadcast, watch, Mutex, RwLock};
-use tokio_rustls::TlsAcceptor;
-use tower::ServiceExt;
-use tracing::{error, info, warn};
+use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(
     name = "ctrlmated",
     version,
-    about = "Ctrlmate cross-platform PC daemon for Home Assistant 2026.11"
+    about = "Ctrlmate PC daemon: hardware, cooling, lighting and Home Assistant bridge"
 )]
 struct Cli {
-    /// Port for the TLS 1.3 HTTPS/WSS Home Assistant endpoint.
+    /// Port of the TLS 1.3 HTTPS/WSS endpoint for Home Assistant (LAN).
     #[arg(long, default_value_t = DEFAULT_HA_PORT)]
     ha_port: u16,
 
-    /// Loopback port for the local Desktop UI IPC server.
+    /// Loopback port of the IPC server (desktop app and agent).
     #[arg(long, default_value_t = DEFAULT_IPC_PORT)]
     ipc_port: u16,
 
-    /// Optional override for the persistent config & TLS directory.
+    /// Override the data directory (default: `%ProgramData%\Ctrlmate` / `/var/lib/ctrlmate` for a
+    /// service, the per-user config directory otherwise).
     #[arg(long)]
     data_dir: Option<PathBuf>,
 
-    /// Print a one-shot hardware discovery & telemetry JSON snapshot and exit.
+    /// Print a one-shot hardware discovery and telemetry JSON snapshot and exit.
     #[arg(long)]
     print_telemetry: bool,
 
-    /// Run under Windows Service Control Manager (SCM).
+    /// Run as the system service (Windows SCM / systemd): system data dir, no in-process session.
     #[arg(long)]
     service: bool,
 
-    /// Install and start Ctrlmate as a native Windows Service (requires Administrator).
+    /// Run in the foreground of a user session (default). Session features (audio, notifications,
+    /// foreground app) run in-process until an agent connects.
+    #[arg(long)]
+    foreground: bool,
+
+    /// Never run session features in-process; always require the agent.
+    #[arg(long)]
+    no_in_process_session: bool,
+
+    /// Windows, elevated: install (or repair) and start the service.
     #[arg(long)]
     install_service: bool,
 
-    /// Stop and uninstall the Ctrlmate Windows Service (requires Administrator).
+    /// Windows, elevated: stop, replace binary and bridge, restart.
+    #[arg(long)]
+    upgrade_service: bool,
+
+    /// Windows, elevated: remove the service, firewall rules and program files.
     #[arg(long)]
     uninstall_service: bool,
+
+    /// With --uninstall-service: also delete the data directory (config, pairings, certificates).
+    #[arg(long)]
+    purge_data: bool,
+
+    /// Generate a new IPC token. Running daemons pick it up within seconds and close their IPC
+    /// sockets; the desktop app and the agent re-read the token file.
+    #[arg(long)]
+    rotate_ipc_token: bool,
+}
+
+/// Logs to stderr, or to `ctrlmated.log` in the data dir when running as a service (no console).
+fn init_logging(cli: &Cli) {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    if cli.service {
+        let dd = datadir::DataDir::resolve(cli.data_dir.clone(), true);
+        if dd.prepare().is_ok() {
+            let path = dd.file("ctrlmated.log");
+            if std::fs::metadata(&path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
+                let _ = std::fs::rename(&path, dd.file("ctrlmated.log.old"));
+            }
+            if let Ok(file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_ansi(false)
+                    .with_writer(std::sync::Mutex::new(file))
+                    .init();
+                return;
+            }
+        }
+    }
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
+async fn wait_for_termination() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut term) = signal(SignalKind::terminate()) {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-
     let cli = Cli::parse();
+    init_logging(&cli);
 
+    if cli.rotate_ipc_token {
+        let dd = datadir::DataDir::resolve_for_cli(cli.data_dir.clone());
+        ipc_token::rotate(&dd)?;
+        println!(
+            "IPC token rotated: {}\nRunning daemons switch within a few seconds; restart agents that do not re-read the file.",
+            dd.file(ipc_token::TOKEN_FILE).display()
+        );
+        return Ok(());
+    }
     if cli.install_service {
-        return win_service::install_windows_service(cli.ha_port, cli.data_dir);
+        return win_service::install_service(cli.ha_port, cli.ipc_port, cli.data_dir);
+    }
+    if cli.upgrade_service {
+        return win_service::upgrade_service(cli.ha_port, cli.ipc_port, cli.data_dir);
     }
     if cli.uninstall_service {
-        return win_service::uninstall_windows_service();
+        return win_service::uninstall_service(cli.purge_data);
     }
-    if cli.service {
+    if cli.service && cfg!(windows) {
         return win_service::run_as_windows_service(cli.ha_port, cli.ipc_port, cli.data_dir);
     }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-
     rt.block_on(async move {
         if cli.print_telemetry {
-            let sw_version = env!("CARGO_PKG_VERSION").to_string();
-            let data_dir = config::DaemonConfig::resolve_data_dir(cli.data_dir)?;
-            let cfg = config::DaemonConfig::load_or_create(&data_dir)?;
-            let mut collector = HardwareCollector::new(
-                cfg.device_id.clone(),
-                sw_version,
-                cfg.security_mode,
-            );
-            let manifest = collector.build_manifest(&cfg.scripts);
-            let _ = collector.poll_states();
-            tokio::time::sleep(Duration::from_millis(250)).await;
-            let (fresh_states, _) = collector.poll_states();
-            let out = serde_json::json!({
-                "manifest": manifest,
-                "states": fresh_states,
-                "hid_devices": collector.hid_devices(),
-                "rgb_devices": collector.rgb_device_statuses(),
-                "conflicts": collector.detect_conflicts(),
-            });
-            println!("{}", serde_json::to_string_pretty(&out)?);
-            return Ok(());
+            return print_telemetry(&cli).await;
         }
-
         let (stop_tx, stop_rx) = watch::channel(false);
         tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
+            wait_for_termination().await;
             let _ = stop_tx.send(true);
         });
-
-        run_daemon(cli.ha_port, cli.ipc_port, cli.data_dir, stop_rx).await
+        runtime::run_daemon(
+            RunOptions {
+                ha_port: cli.ha_port,
+                ipc_port: cli.ipc_port,
+                data_dir: cli.data_dir,
+                service: cli.service,
+                allow_in_process: !cli.no_in_process_session,
+            },
+            Hooks::default(),
+            stop_rx,
+        )
+        .await
     })
 }
 
-pub async fn run_daemon(
-    ha_port: u16,
-    ipc_port: u16,
-    data_dir_override: Option<PathBuf>,
-    mut stop_rx: watch::Receiver<bool>,
-) -> Result<()> {
-    let sw_version = env!("CARGO_PKG_VERSION").to_string();
-    let data_dir = config::DaemonConfig::resolve_data_dir(data_dir_override)?;
-    let cfg = config::DaemonConfig::load_or_create(&data_dir)?;
-
-    let mut collector = HardwareCollector::new(
+async fn print_telemetry(cli: &Cli) -> Result<()> {
+    let dd = datadir::DataDir::resolve(cli.data_dir.clone(), false);
+    let cfg = config::DaemonConfig::load_or_create(&dd)?;
+    let (id, mode, scripts) = (
         cfg.device_id.clone(),
-        sw_version.clone(),
         cfg.security_mode,
+        cfg.scripts.clone(),
     );
-    let manifest = collector.build_manifest(&cfg.scripts);
-    let (initial_states, _) = collector.poll_states();
-
-    let tls_mat = tls::load_or_generate_tls(&data_dir, &manifest.host.name)?;
-    info!(
-        "Ctrlmate daemon v{sw_version} starting (device_id={}, host='{}', cert_fp={}...)",
-        cfg.device_id,
-        manifest.host.name,
-        &tls_mat.cert_fingerprint[..16]
-    );
-
-    let _mdns = mdns::MdnsAnnouncer::start(
-        &cfg.device_id,
-        &manifest.host.name,
-        ha_port,
-        &sw_version,
-        manifest.host.mac_address.as_deref(),
-        &tls_mat.cert_fingerprint,
-    );
-
-    let (ha_tx, _) = broadcast::channel(64);
-    let (ui_tx, _) = broadcast::channel(32);
-    let (mqtt_cfg_tx, mqtt_cfg_rx) = watch::channel(cfg.mqtt.clone());
-
-    let state = Arc::new(server::AppState {
-        data_dir,
-        ha_port,
-        cert_fingerprint: tls_mat.cert_fingerprint,
-        poller: Mutex::new(SmartPoller::new(cfg.polling_profile)),
-        config: RwLock::new(cfg),
-        collector: Mutex::new(collector),
-        pairing: Mutex::new(auth::PairingManager::default()),
-        latest_manifest: RwLock::new(manifest),
-        latest_states: RwLock::new(initial_states),
-        connected_clients: RwLock::new(HashSet::new()),
-        ha_tx,
-        ui_tx,
-        mqtt_connected: AtomicBool::new(false),
-        mqtt_cfg_tx,
-    });
-
-    // Optional Home Assistant 2026.11 MQTT Device + Child Device Discovery transport
-    mqtt::spawn_mqtt_worker(Arc::clone(&state), mqtt_cfg_rx);
-
-    // Background 1 Hz hardware poller task
-    let poll_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            poll_state.tick_poll().await;
-        }
-    });
-
-    // Background 60 FPS smooth lighting transition dispatcher (idle-friendly)
-    let rgb_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_millis(16));
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tick.tick().await;
-            let mut col = rgb_state.collector.lock().await;
-            col.tick_lighting_transitions();
-        }
-    });
-
-    // Background OS Update checker (initial scan 15s after start, then every 6 hours)
-    let update_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(15)).await;
-        loop {
-            update_state.spawn_update_scan();
-            tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
-        }
-    });
-
-    // 1. Local IPC Server (127.0.0.1 only)
-    let ipc_addr = SocketAddr::from(([127, 0, 0, 1], ipc_port));
-    let ipc_listener = TcpListener::bind(ipc_addr).await?;
-    let ipc_router = server::build_ipc_router(Arc::clone(&state));
-    info!("Local Desktop IPC listening on http://{ipc_addr}");
-    tokio::spawn(async move {
-        if let Err(err) = axum::serve(ipc_listener, ipc_router).await {
-            error!("IPC server stopped with error: {err}");
-        }
-    });
-
-    // 2. LAN HTTPS/WSS Home Assistant Server (TLS 1.3 TOFU)
-    let ha_addr = SocketAddr::from(([0, 0, 0, 0], ha_port));
-    let ha_listener = TcpListener::bind(ha_addr).await?;
-    let ha_router = server::build_ha_router(Arc::clone(&state));
-    let tls_acceptor = TlsAcceptor::from(tls_mat.server_config);
-    info!("Home Assistant WSS/HTTPS endpoint listening on https://{ha_addr}");
-
-    loop {
-        tokio::select! {
-            _ = stop_rx.changed() => {
-                if *stop_rx.borrow() {
-                    info!("Received shutdown signal — exiting ctrlmated cleanly");
-                    break;
-                }
-            }
-            accepted = ha_listener.accept() => {
-                let (tcp_stream, peer) = match accepted {
-                    Ok(v) => v,
-                    Err(err) => {
-                        warn!("TCP accept error: {err}");
-                        continue;
-                    }
-                };
-                let acceptor = tls_acceptor.clone();
-                let router = ha_router.clone();
-
-                tokio::spawn(async move {
-                    let tls_stream = match acceptor.accept(tcp_stream).await {
-                        Ok(s) => s,
-                        Err(err) => {
-                            warn!("TLS handshake failed from {peer}: {err}");
-                            return;
-                        }
-                    };
-                    let io = TokioIo::new(tls_stream);
-                    let service = TowerToHyperService::new(router.into_service().map_request(
-                        |req: hyper::Request<hyper::body::Incoming>| {
-                            req.map(axum::body::Body::new)
-                        },
-                    ));
-                    let builder = HyperBuilder::new(TokioExecutor::new());
-                    if let Err(err) = builder.serve_connection_with_upgrades(io, service).await {
-                        let msg = err.to_string();
-                        if !msg.contains("connection closed") {
-                            warn!("HTTPS/WSS connection error from {peer}: {msg}");
-                        }
-                    }
-                });
-            }
-        }
-    }
-
+    let out = tokio::task::spawn_blocking(move || {
+        let mut collector = HardwareCollector::new(id, env!("CARGO_PKG_VERSION").to_string(), mode);
+        let manifest = collector.build_manifest(&scripts);
+        let _ = collector.poll_states();
+        std::thread::sleep(Duration::from_millis(250));
+        let (states, _) = collector.poll_states();
+        serde_json::json!({
+            "manifest": manifest,
+            "states": states,
+            "hid_devices": collector.hid_devices(),
+            "rgb_devices": collector.rgb_device_statuses(),
+            "conflicts": collector.detect_conflicts(),
+        })
+    })
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&out)?);
     Ok(())
 }

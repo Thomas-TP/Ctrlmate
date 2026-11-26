@@ -3,27 +3,282 @@
     "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Connect to Ctrlmate PC",
-        "description": "Enter the IP address or hostname of the computer running Ctrlmate.",
+        "title": "Connect to a Ctrlmate PC",
+        "description": "Enter the address of the computer running Ctrlmate. Discovery normally finds it automatically.",
         "data": {
-          "host": "Host / IP address",
+          "host": "Host or IP address",
           "port": "Port"
+        },
+        "data_description": {
+          "host": "IPv4, IPv6 or host name of the PC.",
+          "port": "HTTPS port of Ctrlmate (default 9487)."
+        }
+      },
+      "confirm_fingerprint": {
+        "title": "Confirm the certificate of {name}",
+        "description": "Ctrlmate on {host} presented this certificate fingerprint (SHA-256):\n\n`{fingerprint}`\n\nOpen the Ctrlmate desktop app on that PC, go to the Home Assistant page and compare it with the fingerprint shown there. Only continue if they are identical. Home Assistant will refuse any other certificate from now on.",
+        "data": {
+          "confirm": "The fingerprints are identical"
         }
       },
       "pair": {
         "title": "Pair with {name}",
-        "description": "Open Ctrlmate on {name} ({host}), click 'Start Pairing' in the Home Assistant tab, and enter the 6-digit PIN code.",
+        "description": "In the Ctrlmate desktop app on {name} ({host}), open the Home Assistant page, click Start pairing and enter the 6-digit PIN shown there.",
         "data": {
           "pin": "6-digit pairing PIN"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate {name}",
+        "description": "Home Assistant can no longer sign in to Ctrlmate on {host}: the pairing was revoked or the certificate changed. Continue to pair again with a new PIN."
+      },
+      "reconfigure": {
+        "title": "Change the address of the Ctrlmate PC",
+        "description": "Update where Home Assistant reaches this PC. The pairing and the pinned certificate are kept when the certificate is unchanged.",
+        "data": {
+          "host": "Host or IP address",
+          "port": "Port"
         }
       }
     },
     "error": {
-      "cannot_connect": "Unable to reach Ctrlmate on the local network.",
-      "invalid_pin": "Invalid or expired 6-digit PIN code."
+      "cannot_connect": "Cannot reach Ctrlmate at this address. Check that the PC is on, Ctrlmate is running and the firewall allows the port.",
+      "invalid_pin": "The PIN is invalid or expired. Start a new pairing in the desktop app.",
+      "too_many_attempts": "Too many wrong PIN attempts. Wait a moment and start a new pairing.",
+      "fingerprint_not_confirmed": "Confirm that the fingerprints are identical to continue.",
+      "wrong_device": "This address belongs to a different PC than the one configured."
     },
     "abort": {
-      "already_configured": "This Ctrlmate PC is already configured."
+      "already_configured": "This Ctrlmate PC is already configured.",
+      "cannot_connect": "Cannot reach Ctrlmate on this PC.",
+      "not_ctrlmate_device": "The discovered device is not a valid Ctrlmate PC.",
+      "fingerprint_mismatch": "The certificate presented by the PC does not match the fingerprint it advertises or the pinned one. Nothing was paired. Make sure you are on a trusted network and try again.",
+      "wrong_device": "This is a different PC than the one that was paired.",
+      "reauth_successful": "Re-authentication successful.",
+      "reconfigure_successful": "The Ctrlmate PC address was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wake-on-LAN",
+        "description": "Settings used by the Wake PC button.",
+        "data": {
+          "wol_broadcast_address": "Broadcast address",
+          "wol_port": "UDP port"
+        },
+        "data_description": {
+          "wol_broadcast_address": "Leave empty to use the broadcast address of the PC's subnet.",
+          "wol_port": "Usually 9 (or 7)."
+        }
+      }
+    },
+    "error": {
+      "invalid_broadcast": "Enter a valid IPv4 broadcast address."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "load": {
+        "name": "Load"
+      },
+      "frequency": {
+        "name": "Frequency"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "power": {
+        "name": "Power"
+      },
+      "usage": {
+        "name": "Usage"
+      },
+      "used": {
+        "name": "Used"
+      },
+      "vram_usage": {
+        "name": "VRAM usage"
+      },
+      "fan_speed": {
+        "name": "Fan speed"
+      },
+      "core_clock": {
+        "name": "Core clock"
+      },
+      "vrm_temperature": {
+        "name": "VRM temperature"
+      },
+      "chipset_temperature": {
+        "name": "Chipset temperature"
+      },
+      "liquid_temperature": {
+        "name": "Liquid temperature"
+      },
+      "pump_speed": {
+        "name": "Pump speed"
+      },
+      "pump_duty": {
+        "name": "Pump duty"
+      },
+      "radiator_fan_speed": {
+        "name": "Radiator fan speed"
+      },
+      "radiator_fan_duty": {
+        "name": "Radiator fan duty"
+      },
+      "active_application": {
+        "name": "Active application"
+      },
+      "os_pending_updates": {
+        "name": "Pending OS updates"
+      }
+    },
+    "binary_sensor": {
+      "thermal_failsafe": {
+        "name": "Thermal failsafe"
+      },
+      "gaming_mode": {
+        "name": "Gaming mode"
+      },
+      "reboot_required": {
+        "name": "Reboot required"
+      },
+      "microphone_in_use": {
+        "name": "Microphone in use"
+      },
+      "webcam_in_use": {
+        "name": "Webcam in use"
+      }
+    },
+    "light": {
+      "pc_lighting": {
+        "name": "Lighting"
+      },
+      "lighting": {
+        "name": "Lighting"
+      }
+    },
+    "select": {
+      "cooling_preset": {
+        "name": "Cooling mode",
+        "state": {
+          "auto": "Automatic",
+          "silent": "Silent",
+          "balanced": "Balanced",
+          "performance": "Performance",
+          "gaming": "Gaming"
+        }
+      },
+      "audio_output": {
+        "name": "Audio output"
+      }
+    },
+    "number": {
+      "master_volume": {
+        "name": "Master volume"
+      }
+    },
+    "switch": {
+      "audio_mute": {
+        "name": "Audio mute"
+      }
+    },
+    "button": {
+      "check_os_updates": {
+        "name": "Check for OS updates"
+      },
+      "power_shutdown": {
+        "name": "Shut down"
+      },
+      "power_restart": {
+        "name": "Restart"
+      },
+      "power_sleep": {
+        "name": "Sleep"
+      },
+      "power_hibernate": {
+        "name": "Hibernate"
+      },
+      "power_lock": {
+        "name": "Lock session"
+      },
+      "display_off": {
+        "name": "Turn off displays"
+      },
+      "wake_on_lan": {
+        "name": "Wake PC"
+      }
+    },
+    "update": {
+      "os_updates": {
+        "name": "Operating system"
+      }
+    },
+    "notify": {
+      "desktop_notify": {
+        "name": "Desktop notification"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Ctrlmate rejected the stored pairing. Re-authenticate the integration."
+    },
+    "pc_offline": {
+      "message": "{name} is offline."
+    },
+    "connection_lost": {
+      "message": "The connection to {name} was lost before the command finished."
+    },
+    "command_timeout": {
+      "message": "{name} did not answer in time."
+    },
+    "command_permission_denied": {
+      "message": "This action is disabled in the Ctrlmate permissions of {name}."
+    },
+    "command_no_agent": {
+      "message": "The Ctrlmate agent is not running in the user session of {name}, so this action cannot run."
+    },
+    "command_agent_timeout": {
+      "message": "The Ctrlmate agent on {name} did not answer in time."
+    },
+    "command_not_supported": {
+      "message": "{name} does not support this action."
+    },
+    "command_invalid_argument": {
+      "message": "{name} rejected the value: {message}"
+    },
+    "command_hardware_error": {
+      "message": "The hardware of {name} reported an error: {message}"
+    },
+    "command_busy": {
+      "message": "{name} is busy, try again in a moment."
+    },
+    "command_unavailable": {
+      "message": "This function is currently unavailable on {name}."
+    },
+    "command_internal": {
+      "message": "{name} reported an internal error: {message}"
+    },
+    "wol_no_mac": {
+      "message": "The MAC address of {name} is not known yet. Connect it once so it can be learned."
+    },
+    "wol_invalid_address": {
+      "message": "The Wake-on-LAN broadcast address {address} is not a valid IPv4 address."
+    },
+    "wol_failed": {
+      "message": "Sending the Wake-on-LAN packet failed: {message}"
+    }
+  },
+  "issues": {
+    "no_agent": {
+      "title": "Ctrlmate agent is not running on {name}",
+      "description": "{name} refused an action because the Ctrlmate agent (the part that runs in the signed-in user session) is not connected. Lock, display, volume and notification actions need it. Sign in on the PC and make sure Ctrlmate Agent starts at login."
+    },
+    "service_outdated": {
+      "title": "Ctrlmate on {name} is outdated",
+      "description": "{name} runs Ctrlmate {version} but this integration needs at least {required}. Some entities or error messages may be missing. Update Ctrlmate on the PC."
     }
   }
 }

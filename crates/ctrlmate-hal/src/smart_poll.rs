@@ -152,7 +152,12 @@ mod tests {
             state("gpu_0_temperature", EntityValue::Float(43.0)),
             state("microphone_in_use", EntityValue::Bool(false)),
         ];
-        assert_eq!(poller.filter_batch(&initial, ActivityTier::Active, t0).len(), 2);
+        assert_eq!(
+            poller
+                .filter_batch(&initial, ActivityTier::Active, t0)
+                .len(),
+            2
+        );
 
         // 1s later: mic toggles ON (instant!), temp jitters +0.2°C (filtered!)
         let t1 = t0 + Duration::from_secs(1);
