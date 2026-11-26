@@ -893,7 +893,7 @@ dependencies = [
  "tokio-tungstenite 0.26.2",
  "tracing",
  "tracing-subscriber",
- "windows 0.58.0",
+ "windows 0.62.2",
  "winreg 0.55.0",
 ]
 
@@ -976,7 +976,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tracing",
- "windows 0.58.0",
+ "windows 0.62.2",
  "windows-core 0.58.0",
  "winreg 0.55.0",
  "zbus",
@@ -1002,7 +1002,7 @@ dependencies = [
  "libloading 0.8.9",
  "serde",
  "tracing",
- "windows 0.58.0",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -5743,16 +5743,6 @@ dependencies = [
  "raw-window-handle",
  "windows-sys 0.61.2",
  "windows-version",
-]
-
-[[package]]
-name = "windows"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
-dependencies = [
- "windows-core 0.58.0",
- "windows-targets 0.52.6",
 ]
 
 [[package]]
