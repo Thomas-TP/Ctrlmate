@@ -138,7 +138,8 @@ Invoke-Native "vpk" $vpkArgs
 # --- validate outputs -------------------------------------------------------------------------
 $expected = @(
     "Ctrlmate-$Channel-Setup.exe",
-    "Ctrlmate-$Version-$Channel-full.nupkg",
+    # Velopack omits the channel from the full package name on its default channel (win): `Ctrlmate-<version>-full.nupkg`.
+    "Ctrlmate-$Version-full.nupkg",
     "releases.$Channel.json"
 )
 $missing = $expected | Where-Object { -not (Test-Path (Join-Path $OutDir $_)) }

@@ -18,11 +18,14 @@ updates:
     directory: /apps/desktop
     schedule:
       interval: weekly
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]
   - package-ecosystem: nuget
     directory: /crates/ctrlmate-lhm-bridge
     schedule:
       interval: weekly
   - package-ecosystem: pip
-    directory: /tests/ha
+    directory: /
     schedule:
       interval: weekly
