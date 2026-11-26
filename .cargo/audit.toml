@@ -15,4 +15,10 @@ ignore = [
   "RUSTSEC-2026-0547",
   "RUSTSEC-2026-0548",
   "RUSTSEC-2026-0543",
+  # rustls-webpki 0.102.8, pinned by rumqttc 0.25.1 (only an error type; verification uses 0.103).
+  "RUSTSEC-2026-0049",
+  "RUSTSEC-2026-0098",
+  "RUSTSEC-2026-0099",
+  "RUSTSEC-2026-0104",
+  "RUSTSEC-2026-0382",
 ]

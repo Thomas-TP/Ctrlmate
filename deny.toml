@@ -25,6 +25,14 @@ ignore = [
   { id = "RUSTSEC-2026-0546", reason = "zip via velopack; extract() never run on untrusted input" },
   { id = "RUSTSEC-2026-0547", reason = "zip via velopack; extract() never run on untrusted input" },
   { id = "RUSTSEC-2026-0548", reason = "zip via velopack; extract() never run on untrusted input" },
+  # rustls-webpki 0.102.8 is pinned by rumqttc 0.25.1 (the latest release, MQTT with TLS), which only uses it
+  # for an error type: certificate verification runs in rustls 0.23 with rustls-webpki 0.103, which is not
+  # affected. Not fixable on our side; remove once rumqttc moves to rustls-webpki 0.103.
+  { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102 pinned by rumqttc; only an error type, verification uses 0.103" },
+  { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.102 pinned by rumqttc; only an error type, verification uses 0.103" },
+  { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.102 pinned by rumqttc; only an error type, verification uses 0.103" },
+  { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.102 pinned by rumqttc; only an error type, verification uses 0.103" },
+  { id = "RUSTSEC-2026-0382", reason = "rustls-webpki 0.102 pinned by rumqttc; only an error type, verification uses 0.103" },
   # chrono is flagged unmaintained (a notice, not a vulnerability) and has no safe upgrade. It only
   # formats and parses RFC 3339 timestamps. Replace it with the time crate in a dedicated change.
   { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained notice, no safe upgrade; timestamps only" },
