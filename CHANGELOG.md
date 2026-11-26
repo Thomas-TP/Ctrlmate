@@ -32,7 +32,8 @@ Major rework: security, correctness, honesty of sensors, UI and release engineer
 - Redesigned desktop UI (Tauri v2, React 19, Tailwind v4): light/dark, FR + EN, offline fonts, accessible.
 - Preset `full_speed` removed from user presets (it is the emergency state only); `gaming` preset added.
 - `tauri.conf.json` no longer carries its own version; Tauri uses the Cargo workspace version.
-- The Home Assistant install instructions now describe HACS (there is no built-in marketplace).
+- The Home Assistant install instructions now describe the Marketplace built into Home Assistant 2026.11
+  (the successor of HACS: same catalog and `hacs.json`), with HACS kept for 2026.10 and older.
 
 ### Removed
 - Blanket vendor-wide udev rules (ASUS, Corsair, Lian Li, MSI, Aquacomputer, `uaccess` tags) for devices Ctrlmate

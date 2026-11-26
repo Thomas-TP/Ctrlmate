@@ -269,7 +269,7 @@ jobs:
           cp artifacts/dist-windows/* release/
           cp artifacts/dist-linux-x86_64/* release/
           cp artifacts/dist-linux-aarch64/* release/
-          # Home Assistant integration (HACS / manual install)
+          # Home Assistant integration (Marketplace, HACS or manual install)
           (cd custom_components/ctrlmate && zip -r -X "../../release/ctrlmate-homeassistant-${VERSION}.zip" . -x '*__pycache__*')
           cp artifacts/release-notes/release-notes.md release-notes.md
           # Velopack feeds, installers and packages first; checksums over everything that ships.

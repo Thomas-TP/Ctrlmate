@@ -7,7 +7,7 @@ blueprint:
     or RGB colour, with a smooth transition.
 
 
-    Blueprints are not installed by HACS. Copy this file to
+    Blueprints are not installed by the Marketplace (or HACS). Copy this file to
     `config/blueprints/automation/ctrlmate/` (or import it from its raw GitHub URL
     in Settings > Automations & Scenes > Blueprints), then create an automation
     from it.

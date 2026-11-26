@@ -85,12 +85,13 @@ adapters (PIIX4 / I801) only. `i2c-dev` is loaded through `modules-load.d`. Noth
 
 ### Home Assistant
 
-Home Assistant has no built-in marketplace for custom integrations; use [HACS](https://hacs.xyz):
+From Home Assistant 2026.11, HACS is part of Home Assistant itself as the **Marketplace** ([docs](https://www.home-assistant.io/integrations/marketplace/)): same catalog, same repositories, same `hacs.json`. Nothing to download.
 
-1. HACS, menu, **Custom repositories**, add `https://github.com/Thomas-TP/Ctrlmate` with type **Integration**.
-2. Install **Ctrlmate** and restart Home Assistant.
-3. Settings, Devices & services, Add integration, **Ctrlmate** (discovered automatically through mDNS, or enter the host). Confirm the certificate fingerprint when asked (it must match the one shown in the desktop app) and enter the 6-digit PIN shown there.
+1. Settings, **Marketplace**, **Add from link** (connect your GitHub account the first time, it only reads public data), enter `Thomas-TP/Ctrlmate`, then **Add**.
+2. Open **Ctrlmate** in the Marketplace, **Install**, and restart Home Assistant if a repair asks for it.
+3. Settings, Devices & services: **Ctrlmate** is discovered automatically through mDNS (or add it and enter the host). Confirm the certificate fingerprint when asked (it must match the one shown in the desktop app) and enter the 6-digit PIN shown there.
 
+On Home Assistant 2026.10 or older, install [HACS](https://hacs.xyz) and add the repository there as a custom repository of type **Integration**.
 Manual install: unzip `ctrlmate-homeassistant-<version>.zip` from the release into `config/custom_components/ctrlmate`.
 A Hue / Govee sync blueprint is in [`blueprints/automation/`](blueprints/automation/ctrlmate_sync_hue_govee.yaml).
 

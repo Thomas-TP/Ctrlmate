@@ -5,9 +5,11 @@ Requires Home Assistant 2026.10 or newer (child devices). No cloud, no polling.
 
 ## Install
 
-- HACS / Marketplace: add this repository as a custom repository (category *Integration*), install, restart.
+- Marketplace (Home Assistant 2026.11+, it replaces HACS): *Settings > Marketplace > Add from link*, enter
+  `Thomas-TP/Ctrlmate`, then install and restart if asked. On 2026.10 or older use HACS with a custom
+  repository of type *Integration*.
 - Manual: copy `custom_components/ctrlmate` into your `config/custom_components/`.
-- Blueprints are **not** installed by HACS. Copy `blueprints/automation/ctrlmate_sync_hue_govee.yaml`
+- Blueprints are **not** installed by the Marketplace or HACS. Copy `blueprints/automation/ctrlmate_sync_hue_govee.yaml`
   to `config/blueprints/automation/ctrlmate/` (or import its raw URL under
   *Settings > Automations & Scenes > Blueprints*).
 
