@@ -9,6 +9,10 @@
 //! * `--uninstall-service`  stop, delete, remove firewall rules and program files
 //!   (`--purge-data` additionally removes `%ProgramData%\Ctrlmate`).
 
+// The constants and pure helpers below are unit-tested on every platform but only used by the Windows
+// service code, so the Linux build would otherwise fail `-D warnings` on dead code.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use anyhow::Result;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
