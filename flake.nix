@@ -17,8 +17,12 @@
           common = {
             inherit version src;
             cargoLock.lockFile = ./Cargo.lock;
-            nativeBuildInputs = [ pkgs.pkg-config ];
+            nativeBuildInputs = [ pkgs.pkg-config pkgs.cmake ];
             buildInputs = [ pkgs.udev pkgs.hidapi ];
+            # nixpkgs exports AWS_LC_SYS_USE_SYSTEM=1 for aws-lc-sys (pulled in by rustls), which then
+            # fails because no system AWS-LC is provided. Build it from source instead.
+            preBuild = "unset AWS_LC_SYS_USE_SYSTEM";
+            preCheck = "unset AWS_LC_SYS_USE_SYSTEM";
             doCheck = true;
           };
           meta = with pkgs.lib; {

@@ -11,6 +11,7 @@ pub const APP_NAME: &str = "Ctrlmate";
 pub const HIDDEN_ARG: &str = "--hidden";
 
 /// Windows `Run` value: the quoted path followed by the hidden flag.
+#[cfg(any(windows, test))]
 pub fn run_value(exe: &Path) -> String {
     format!("\"{}\" {HIDDEN_ARG}", exe.display())
 }

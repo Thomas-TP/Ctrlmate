@@ -45,6 +45,8 @@ pub enum ServiceAction {
     Upgrade,
 }
 
+// `Completed`, `Cancelled` and `Failed` are only produced by the Windows elevation path.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ElevatedStatus {

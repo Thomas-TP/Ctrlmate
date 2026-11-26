@@ -29,8 +29,8 @@ This package ships the ctrlmated system daemon (runs as the unprivileged
 install -Dm755 @ROOT@/target/release/ctrlmated %{buildroot}%{_bindir}/ctrlmated
 install -Dm755 @ROOT@/target/release/ctrlmate-agent %{buildroot}%{_bindir}/ctrlmate-agent
 install -Dm755 @ROOT@/target/release/ctrlmate-desktop %{buildroot}%{_bindir}/ctrlmate-desktop
-install -Dm644 @ROOT@/packaging/linux/ctrlmated.service %{buildroot}%{_unitdir}/ctrlmated.service
-install -Dm644 @ROOT@/packaging/linux/ctrlmate-agent.service %{buildroot}%{_userunitdir}/ctrlmate-agent.service
+install -Dm644 @ROOT@/packaging/linux/ctrlmated.service %{buildroot}%{_prefix}/lib/systemd/system/ctrlmated.service
+install -Dm644 @ROOT@/packaging/linux/ctrlmate-agent.service %{buildroot}%{_prefix}/lib/systemd/user/ctrlmate-agent.service
 install -Dm644 @ROOT@/packaging/linux/99-ctrlmate.rules %{buildroot}%{_prefix}/lib/udev/rules.d/99-ctrlmate.rules
 install -Dm644 @ROOT@/packaging/linux/ctrlmate-i2c.conf %{buildroot}%{_prefix}/lib/modules-load.d/ctrlmate-i2c.conf
 install -Dm644 @ROOT@/packaging/linux/ctrlmate.desktop %{buildroot}%{_datadir}/applications/ctrlmate.desktop
@@ -82,8 +82,8 @@ exit 0
 %{_bindir}/ctrlmated
 %{_bindir}/ctrlmate-agent
 %{_bindir}/ctrlmate-desktop
-%{_unitdir}/ctrlmated.service
-%{_userunitdir}/ctrlmate-agent.service
+%{_prefix}/lib/systemd/system/ctrlmated.service
+%{_prefix}/lib/systemd/user/ctrlmate-agent.service
 %{_prefix}/lib/udev/rules.d/99-ctrlmate.rules
 %{_prefix}/lib/modules-load.d/ctrlmate-i2c.conf
 %{_datadir}/applications/ctrlmate.desktop

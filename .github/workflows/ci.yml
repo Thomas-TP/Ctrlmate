@@ -21,7 +21,7 @@ env:
   # Pinned tool versions (bump deliberately, together with rust-toolchain.toml).
   BUN_VERSION: "1.4.4"
   DOTNET_VERSION: "8.0.x"
-  PYTHON_VERSION: "3.13"
+  PYTHON_VERSION: "3.14"
 
 # Action pinning policy: third-party actions are pinned to an exact major tag and kept current by
 # Dependabot (.github/dependabot.yml). For a stricter supply chain, replace each tag with the full
