@@ -98,7 +98,10 @@ def test_manifest_and_hacs_are_consistent() -> None:
     manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     assert manifest["domain"] == "ctrlmate"
-    assert manifest["version"] == "0.6.0"
+    cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    workspace_version = re.search(r'^version = "([^"]+)"', cargo, re.M)
+    assert workspace_version is not None
+    assert manifest["version"] == workspace_version.group(1)
     assert manifest["integration_type"] in {"hub", "device"}
     assert manifest["loggers"]
     assert manifest["config_flow"] is True

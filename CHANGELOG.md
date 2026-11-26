@@ -3,7 +3,15 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-26
+
+Maintenance release: dependencies, build and release fixes on top of 0.6.0.
+
+### Fixed
+- Release: the Windows packaging step now expects Velopack's real package name (`Ctrlmate-<version>-full.nupkg`),
+  so the installer, the portable zip and the 0.5.0 to 0.6.x delta are published.
+- Linux and Nix builds, the deb/rpm packages (systemd unit paths) and the Home Assistant CI job.
+- The version script also keeps the LibreHardwareMonitor bridge version in sync.
 
 ### Changed
 - Dependencies brought up to date, replacing the Dependabot pull requests:

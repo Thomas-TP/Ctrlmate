@@ -12,6 +12,7 @@ Derived files:
   package.json, apps/desktop/package.json   "version"
   custom_components/ctrlmate/manifest.json  "version"
   packaging/linux/PKGBUILD                  pkgver=
+  crates/ctrlmate-lhm-bridge/*.csproj       <Version>, Program.cs `Version` constant
 Not derived (read the workspace version directly, nothing to sync):
   tauri.conf.json (no "version": Tauri falls back to the Cargo package version),
   flake.nix (builtins.fromTOML), pack-velopack.ps1 / pack-linux.sh (cargo metadata).
@@ -66,11 +67,31 @@ def pkgbuild_target():
     return "packaging/linux/PKGBUILD", read, write
 
 
-TARGETS = [
-    json_target("package.json"),
+def regex_target(rel: str, pattern: str):
+    """A single `pattern` with three groups: prefix, version, suffix."""
+
+    def read(text: str) -> str | None:
+        m = re.search(pattern, text, re.M)
+        return m.group(2) if m else None
+
+    def write(text: str, version: str) -> str:
+        return re.sub(pattern, lambda m: m.group(1) + version + m.group(3), text, count=1, flags=re.M)
+
+    return rel, read, write
+
+
+TARGETS = [    json_target("package.json"),
     json_target("apps/desktop/package.json"),
     json_target("custom_components/ctrlmate/manifest.json"),
     pkgbuild_target(),
+    regex_target(
+        "crates/ctrlmate-lhm-bridge/Ctrlmate.LhmBridge.csproj",
+        r"(<Version>)([^<]*)(</Version>)",
+    ),
+    regex_target(
+        "crates/ctrlmate-lhm-bridge/Program.cs",
+        r'(internal const string Version = ")([^"]*)(";)',
+    ),
 ]
 
 
