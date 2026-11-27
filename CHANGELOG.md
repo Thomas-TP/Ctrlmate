@@ -3,6 +3,13 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.3] - 2026-11-27
+
+### Fixed
+- Desktop app: with no service installed yet (so no IPC token), the "Service and agent" block showed an
+  error ("no access token found") instead of the install button. A missing token is now treated as
+  "service not installed", so the one-click elevated install is offered.
+
 ## [0.6.2] - 2026-11-27
 
 Patch release found by running 0.6.1 on real hardware.

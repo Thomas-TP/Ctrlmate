@@ -116,7 +116,11 @@ async fn service_status(state: State<'_, AppState>) -> Result<ServiceStatus, Ipc
             Ok(service::build_status(version, resp.body.get("service")))
         }
         Ok(_) => Err(IpcError::new(ErrorCode::DaemonProtocol)),
-        Err(e) if e.code == ErrorCode::DaemonOffline => Ok(service::build_status(version, None)),
+        // No daemon answers, or none ever created its token: the service is not installed or never
+        // ran. That is exactly when the install button must be offered, not an error.
+        Err(e) if matches!(e.code, ErrorCode::DaemonOffline | ErrorCode::TokenNotFound) => {
+            Ok(service::build_status(version, None))
+        }
         Err(e) => Err(e),
     }
 }
