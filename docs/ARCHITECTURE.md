@@ -137,11 +137,13 @@ vendor access.
 
 ## 11. UI
 
-Tauri v2 + React 19 + TypeScript + Tailwind v4. Clean, minimal, calm (Linear / Raycast / Apple), light + dark
-following the system with a manual override persisted, no neon, no "gaming" look. Fonts bundled offline.
-FR + EN complete with a language switch (default: system language). °C/°F everywhere through one formatter.
-WCAG AA contrast, keyboard navigable, `aria-live` for toasts, text alternatives for charts. All daemon data is
-real; empty/unavailable states are explicit.
+Tauri v2 + React 19 + TypeScript + Tailwind v4. Design decisions and the onboarding flow: `docs/UX.md`.
+One dashboard with detail side panels and a `Ctrl+K` palette (main window), a quick panel for the tray icon
+(second window, same bundle), a first-run onboarding. Clean, calm, light + dark following the system with a
+manual override persisted, no neon, no "gaming" look. Fonts bundled offline. FR + EN complete with a language
+switch (default: system language). °C/°F everywhere through one formatter. WCAG AA contrast, keyboard
+navigable, `aria-live` for toasts, text alternatives for charts. All daemon data is real; empty/unavailable
+states are explicit. The webview never talks to the daemon: only Rust commands do (section 2).
 
 ## 12. Versioning and quality gates
 

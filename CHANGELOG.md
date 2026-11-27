@@ -3,6 +3,31 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-27
+
+The desktop interface was redesigned from scratch (see `docs/UX.md`).
+
+### Added
+- Dashboard: a headline and the alerts that need attention, then cooling (with the preset picker inline),
+  temperatures, lighting, PC actions, Home Assistant and updates. Each tile opens a detail panel on top of
+  the dashboard instead of a separate page.
+- Command palette (`Ctrl+K`) for every section and the common actions.
+- Quick panel for the tray icon: temperatures, cooling preset, master light, lock / screens off / sleep.
+  It opens next to the taskbar and closes when it loses focus (on Linux it is a tray menu entry).
+- First-run onboarding: install the service with one administrator approval, hardware and conflicts, cooling
+  preset with a thermal safety check, Home Assistant pairing with live detection, preferences.
+  It can be replayed from Settings.
+- Hardware tab in Settings: service status and repair, deep-hardware mode, software that may get in the way,
+  detected devices and lighting backends.
+
+### Changed
+- New visual system: sober light and dark themes, one accent colour, native dialogs and side sheets.
+- The temperature list names each sensor after its device ("AMD Ryzen 9 7900X3D" instead of "Temperature").
+- The tray menu has a "Quick panel" entry; left-clicking the icon opens the quick panel, not the main window.
+
+### Removed
+- The sidebar navigation and the six page layout, and the interface strings only they used.
+
 ## [0.6.3] - 2026-11-27
 
 ### Fixed

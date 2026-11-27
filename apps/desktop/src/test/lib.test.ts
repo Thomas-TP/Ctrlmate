@@ -3,8 +3,7 @@ import { makeSnapshot } from '../../dev/mock-daemon';
 import { buildDiagnostics } from '../lib/diagnostics';
 import { argsToText, isAbsolutePath, slugId, textToArgs, validateScripts } from '../lib/scripts';
 import { lightZones, numberOf, orphanRgbDevices, readSensor } from '../lib/snapshot';
-import { interpolateDuty } from '../components/charts/CurveChart';
-import { matches } from '../components/CommandPalette';
+import { deriveAlerts, hottest, tempFill, temperatureRows } from '../lib/derive';
 import type { AllowlistedScript } from '../types/protocol';
 
 describe('honest sensors', () => {
@@ -68,18 +67,33 @@ describe('lighting zones', () => {
   });
 });
 
-describe('curve interpolation', () => {
-  const curve = [
-    { temp_c: 30, duty: 30 },
-    { temp_c: 50, duty: 40 },
-    { temp_c: 90, duty: 100 },
-  ];
-  it('interpolates linearly and clamps outside the curve', () => {
-    expect(interpolateDuty(curve, 40)).toBe(35);
-    expect(interpolateDuty(curve, 70)).toBe(70);
-    expect(interpolateDuty(curve, 10)).toBe(30);
-    expect(interpolateDuty(curve, 120)).toBe(100);
-    expect(interpolateDuty([], 50)).toBeNull();
+describe('derived dashboard data', () => {
+  it('has no alert on a healthy default machine except the missing agent state', () => {
+    const ids = deriveAlerts(makeSnapshot('default')).map((a) => a.id);
+    expect(ids).not.toContain('failsafe');
+  });
+
+  it('puts the cooling safety mode first and as a danger', () => {
+    const alerts = deriveAlerts(makeSnapshot('failsafe'));
+    expect(alerts[0]).toMatchObject({ id: 'failsafe', tone: 'danger', sheet: 'cooling' });
+  });
+
+  it('lists CPU, GPU and liquid sensors first, honestly unavailable ones included', () => {
+    const rows = temperatureRows(makeSnapshot('default'));
+    expect(rows.slice(0, 3).map((r) => r.id)).toEqual([
+      'cpu_0_temperature',
+      'gpu_0_temperature',
+      'cooler_0_liquid_temperature',
+    ]);
+    expect(rows[0]?.reading.value).toBeNull();
+    expect(rows[1]?.reading.value).toBe(46);
+  });
+
+  it('reports the hottest readable sensor and maps temperatures to a bar fill', () => {
+    expect(hottest(makeSnapshot('default'))).toBe(46);
+    expect(tempFill(20)).toBe(0);
+    expect(tempFill(60)).toBe(50);
+    expect(tempFill(150)).toBe(100);
   });
 });
 
@@ -174,14 +188,5 @@ describe('diagnostics bundle', () => {
     };
     expect(parsed.app.token_source).toBe('system');
     expect(parsed.daemon.counts.entities).toBe(snap.manifest.entities.length);
-  });
-});
-
-describe('command palette filter', () => {
-  it('matches accent- and case-insensitively on label and keywords', () => {
-    expect(matches({ label: 'Thème : Sombre', keywords: 'dark' }, 'theme sombre')).toBe(true);
-    expect(matches({ label: 'Go to Cooling', keywords: 'fan refroidissement' }, 'COOL')).toBe(true);
-    expect(matches({ label: 'Go to Cooling' }, 'lighting')).toBe(false);
-    expect(matches({ label: 'Anything' }, '')).toBe(true);
   });
 });

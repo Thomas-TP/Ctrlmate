@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { app, type AppInfo, type ServiceStatus } from '../api/app';
+import { app, type AppInfo, type AppUpdateStatus, type ServiceStatus } from '../api/app';
 
 /** Re-renders every `ms` and returns the current epoch ms (countdowns, relative times). */
 export function useNow(ms = 1000, active = true): number {
@@ -79,3 +79,5 @@ export function useDebounced<A extends unknown[]>(fn: (...a: A) => void, ms: num
     [ms],
   );
 }
+
+export const useAppUpdate = (): Resource<AppUpdateStatus> => useResource(app.updateCheck);

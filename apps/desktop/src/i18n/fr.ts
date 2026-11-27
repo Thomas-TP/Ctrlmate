@@ -5,13 +5,8 @@ type Keys = keyof typeof en;
 /** French catalogue: the type forces exactly the keys of `en.ts`. */
 export const fr: Record<Keys, string> = {
   // --- app, navigation, common -------------------------------------------------------------
-  'app.name': 'Ctrlmate',
-  'a11y.skip': 'Aller au contenu',
-  'nav.label': 'Navigation principale',
-  'nav.overview': 'Vue d’ensemble',
   'nav.cooling': 'Refroidissement',
   'nav.lighting': 'Éclairage',
-  'nav.system': 'Système',
   'nav.homeAssistant': 'Home Assistant',
   'nav.settings': 'Réglages',
   'tray.show': 'Afficher Ctrlmate',
@@ -63,10 +58,6 @@ export const fr: Record<Keys, string> = {
   'palette.quit': 'Quitter Ctrlmate',
 
   // --- connection --------------------------------------------------------------------------
-  'connection.status.connecting': 'Connexion',
-  'connection.status.connected': 'Connecté',
-  'connection.status.unauthorized': 'Non autorisé',
-  'connection.status.offline': 'Hors ligne',
   'connection.connecting.title': 'Connexion au service Ctrlmate…',
   'connection.connecting.body': 'Cela ne prend qu’un instant.',
   'connection.offline.title': 'Le service Ctrlmate est injoignable',
@@ -75,8 +66,6 @@ export const fr: Record<Keys, string> = {
   'connection.retrying': 'nouvel essai dans {seconds}\u00a0s',
   'connection.reconnecting': 'Reconnexion…',
   'connection.stale.title': 'Connexion au service perdue',
-  'connection.stale.body':
-    'Les valeurs affichées sont les dernières reçues et peuvent être obsolètes.',
   'connection.help.offline':
     'Rien ne répond sur le port local du service. Le service en arrière-plan (ctrlmated) est peut-être arrêté ou pas encore installé.',
   'connection.help.token_not_found':
@@ -150,68 +139,39 @@ export const fr: Record<Keys, string> = {
   'cooling.reason.unknown': 'Raison\u00a0: {code}.',
 
   // --- overview ----------------------------------------------------------------------------
-  'overview.title': 'Vue d’ensemble',
   'metric.cpu_temp': 'Température CPU',
   'metric.cpu_load': 'Charge CPU',
-  'metric.gpu_temp': 'Température GPU',
   'metric.gpu_load': 'Charge GPU',
   'metric.liquid_temp': 'Température du liquide',
   'metric.fan': 'Ventilateurs',
   'metric.pump': 'Pompe',
-  'metric.sparkline.summary':
-    '{name}, {minutes}\u00a0min dernières\u00a0: minimum {min}, maximum {max}, actuellement {now}.',
   'metric.sparkline.now': '{name}\u00a0: {now}. Historique encore insuffisant.',
-  'metric.sparkline.none': '{name}\u00a0: aucune valeur.',
-  'overview.alerts.title': 'Alertes',
-  'overview.alerts.none': 'Rien ne demande votre attention.',
   'overview.alerts.open': 'Ouvrir',
   'alert.failsafe.title': 'Le mode sécurité du refroidissement est actif',
   'alert.failsafe.body': 'Ventilateurs et pompe sont poussés pour protéger le matériel.',
   'alert.anticheat.title': 'Accès matériel suspendu par un anti-triche',
   'alert.anticheat.body':
     'Les capteurs approfondis et l’éclairage SMBus sont arrêtés et reprennent automatiquement 30 secondes après la disparition de l’anti-triche.',
-  'alert.sensor.title': '{name} est indisponible',
   'alert.conflict.title': '{name} est en cours d’exécution',
   'alert.agent.title': 'L’agent Ctrlmate n’est pas connecté',
   'alert.reboot.title': 'Un redémarrage est nécessaire pour terminer les mises à jour',
-  'overview.status.title': 'État',
-  'overview.status.connection': 'Connexion',
-  'overview.status.service': 'Service',
-  'overview.status.service.installed': 'Service installé',
-  'overview.status.service.foreground': 'Lancé à la main (pas un service)',
-  'overview.status.agent': 'Agent de session',
-  'overview.status.ha': 'Home Assistant',
   'overview.status.ha.clients_one': '{count} appairé, {live} en direct',
   'overview.status.ha.clients_other': '{count} appairés, {live} en direct',
-  'overview.status.mqtt': 'MQTT',
-  'overview.status.cooling': 'Préréglage de refroidissement',
-  'overview.host.title': 'Ce PC',
-  'overview.host.name': 'Nom',
-  'overview.host.model': 'Modèle',
-  'overview.host.os': 'Système',
-  'overview.host.security': 'Accès au matériel',
-  'overview.host.devices': 'Composants détectés',
   'security.zero_kernel_safe': 'Sans pilote (compatible anti-triche)',
   'security.deep_hardware_pawn_io': 'Matériel approfondi (PawnIO)',
   'agent.connected': 'Agent connecté',
   'agent.disconnected': 'Pas d’agent',
-  'agent.in_process': 'Intégré (lancement de dev)',
   'mqtt.connected': 'Connecté',
   'mqtt.disconnected': 'Non connecté',
   'mqtt.disabled': 'Désactivé',
 
   // --- cooling -----------------------------------------------------------------------------
-  'cooling.title': 'Refroidissement',
-  'cooling.description':
-    'Choisissez un préréglage. Les courbes ci-dessous sont celles que le service applique réellement.',
   'cooling.state.normal': 'Normal',
   'cooling.state.failsafe': 'Mode sécurité',
   'cooling.failsafe.title': 'Le mode sécurité est actif',
   'cooling.failsafe.body':
     'Il se termine tout seul quand chaque capteur connu repasse sous sa limite.',
   'cooling.presets.title': 'Préréglage',
-  'cooling.presets.description': 'Le changement s’applique une fois confirmé par le service.',
-  'cooling.applied': 'Appliqué',
   'cooling.pump.floor': 'Pompe ≥ {value}',
   'cooling.auto.gaming': 'Auto utilise la courbe {preset} tant qu’un jeu est détecté.',
   'preset.auto': 'Auto',
@@ -225,35 +185,21 @@ export const fr: Record<Keys, string> = {
   'preset.gaming': 'Jeu',
   'preset.gaming.desc': 'Réagit tôt pour les longues sessions intenses.',
   'cooling.curve.title': 'Courbe des ventilateurs · {preset}',
-  'cooling.curve.description':
-    'Vitesse des ventilateurs selon la température. Le point indique où se situe le capteur choisi sur la courbe.',
   'cooling.curve.missing': 'Ce préréglage n’a aucun point de courbe.',
   'cooling.chart.desc':
     'Graphique en courbe de la vitesse des ventilateurs (0 à 100\u00a0%) selon la température, avec {points} points\u00a0; minimum de la pompe {pump}.',
-  'cooling.table.temp': 'Température',
-  'cooling.table.duty': 'Vitesse des ventilateurs',
   'cooling.source.label': 'Source de température',
   'cooling.source.cpu': 'CPU',
   'cooling.source.gpu': 'GPU',
   'cooling.source.liquid': 'Liquide',
-  'cooling.live.fan': 'Vitesse des ventilateurs',
-  'cooling.live.pump': 'Vitesse de la pompe',
-  'cooling.preview.note':
-    'Trait pointillé\u00a0: aperçu d’un autre préréglage. Cliquez pour l’appliquer.',
   'cooling.sensor.unavailable': 'Température {name} indisponible',
-  'cooling.open.settings': 'Ouvrir les réglages',
   'cooling.policy.missing.title': 'Aucune politique de refroidissement reçue',
   'cooling.policy.missing.body':
     'Le service n’a pas envoyé ses courbes. Mettez le service à la même version que l’application.',
   'cooling.safety.title': 'Limites de sécurité',
-  'cooling.safety.description':
-    'Définies par le service. Elles s’appliquent à tous les préréglages et ne peuvent pas être contournées.',
   'cooling.threshold.cpu.long': 'Température critique du CPU',
   'cooling.threshold.gpu.long': 'Température critique du GPU',
   'cooling.threshold.liquid.long': 'Température critique du liquide',
-  'cooling.threshold.cpu.range': 'plage autorisée de {min} à {max}',
-  'cooling.threshold.hysteresis': 'Hystérésis (marge pour quitter le mode sécurité)',
-  'cooling.threshold.pump_floor_c': 'Température du liquide où la protection de la pompe commence',
   'cooling.rule.pump': 'La pompe ne descend jamais sous {min}.',
   'cooling.rule.critical':
     'Une température critique sur un capteur connu force ventilateurs et pompe à 100\u00a0%.',
@@ -264,9 +210,6 @@ export const fr: Record<Keys, string> = {
     'Ces limites ne sont pas modifiables depuis l’application dans cette version.',
 
   // --- lighting ----------------------------------------------------------------------------
-  'lighting.title': 'Éclairage',
-  'lighting.description':
-    'Les zones viennent de votre matériel. Seules les commandes prises en charge par une zone sont affichées.',
   'lighting.rescan': 'Relancer la détection',
   'lighting.rescan.done': 'Détection du matériel terminée.',
   'lighting.master': 'Maître',
@@ -274,12 +217,7 @@ export const fr: Record<Keys, string> = {
   'lighting.power': 'Alimentation',
   'lighting.intensity': 'Intensité',
   'lighting.kelvin': 'Température de couleur',
-  'lighting.kelvin.warm': 'Chaud',
-  'lighting.kelvin.cool': 'Froid',
   'lighting.color': 'Couleur',
-  'lighting.mode': 'Mode actuel\u00a0: {mode}',
-  'lighting.mode.rgb': 'couleur',
-  'lighting.mode.color_temp': 'température de couleur',
   'lighting.leds': 'LED',
   'lighting.not_controllable': 'Non contrôlable',
   'lighting.no_state': 'Aucun état reçu pour cette zone.',
@@ -292,15 +230,11 @@ export const fr: Record<Keys, string> = {
   'lighting.backends': 'Pilotes d’éclairage actifs\u00a0: {list}.',
 
   // --- system ------------------------------------------------------------------------------
-  'system.title': 'Système',
-  'system.description':
-    'Alimentation, son, notifications, mises à jour et scripts personnalisés de ce PC.',
   'system.noagent.title': 'L’agent Ctrlmate ne tourne pas dans votre session',
   'system.noagent.body':
     'Verrouillage, écrans éteints, son, notifications, détection d’application et scripts en ont besoin. Activez le démarrage automatique de l’agent dans les Réglages, puis fermez et rouvrez votre session.',
   'system.result.ok': 'Terminé.',
   'system.power.title': 'Alimentation',
-  'system.power.description': 'Actions sur ce PC.',
   'system.power.none': 'Le service n’expose aucune action d’alimentation.',
   'power.power_shutdown': 'Éteindre',
   'power.power_shutdown.confirm.title': 'Éteindre ce PC\u00a0?',
@@ -325,12 +259,10 @@ export const fr: Record<Keys, string> = {
   'system.audio.mute': 'Muet',
   'system.audio.output': 'Périphérique de sortie',
   'system.audio.output.none': 'Périphérique inconnu',
-  'system.audio.output.empty': 'Aucun périphérique de sortie signalé.',
   'system.audio.unavailable.title': 'État du son indisponible',
   'system.audio.unavailable.body':
     'L’agent de session ne remonte le son que lorsqu’il tourne. Rien n’est deviné.',
   'system.session.title': 'Session',
-  'system.session.description': 'Ce que l’agent de session observe en ce moment.',
   'system.session.app': 'Application active',
   'system.session.gaming': 'Mode jeu',
   'system.session.locked': 'Session verrouillée',
@@ -345,7 +277,6 @@ export const fr: Record<Keys, string> = {
   'system.session.unavailable.body':
     'Démarrez l’agent de session pour voir l’application active, le mode jeu, le microphone et la webcam.',
   'system.notify.title': 'Notification de test',
-  'system.notify.description': 'Affiche une notification de bureau dans votre session.',
   'system.notify.field.title': 'Titre',
   'system.notify.field.message': 'Message',
   'system.notify.default_title': 'Ctrlmate',
@@ -384,7 +315,6 @@ export const fr: Record<Keys, string> = {
   'scripts.empty.body': 'Ajoutez un programme avec son chemin complet pour le rendre disponible.',
   'scripts.name': 'Nom',
   'scripts.id': 'Identifiant',
-  'scripts.id.hint': 'Minuscules, chiffres, - et _ (32 au maximum). Figé après l’enregistrement.',
   'scripts.executable': 'Programme (chemin absolu)',
   'scripts.executable.placeholder': 'C:\\Tools\\backup.exe ou /usr/local/bin/backup',
   'scripts.args': 'Arguments',
@@ -403,11 +333,6 @@ export const fr: Record<Keys, string> = {
   'scripts.issue.too_many': 'Trop de scripts (32 au maximum).',
 
   // --- home assistant ----------------------------------------------------------------------
-  'ha.title': 'Home Assistant',
-  'ha.description':
-    'Appairez Home Assistant, choisissez ce qu’il peut faire et réglez la fréquence d’envoi des données.',
-  'ha.telemetry.off':
-    'La télémétrie est désactivée\u00a0: Home Assistant et MQTT ne reçoivent aucune valeur de capteur.',
   'ha.pairing.title': 'Appairage',
   'ha.pairing.description':
     'Ajoutez ce PC dans Home Assistant, puis saisissez le code affiché ici.',
@@ -426,7 +351,6 @@ export const fr: Record<Keys, string> = {
   'ha.fingerprint.hint':
     'Home Assistant affiche la même empreinte. Ne confirmez que si les deux correspondent.',
   'ha.clients.title': 'Appareils appairés',
-  'ha.clients.description': 'Instances de Home Assistant autorisées à dialoguer avec ce PC.',
   'ha.clients.empty.title': 'Rien d’appairé pour l’instant',
   'ha.clients.empty.body': 'Les instances de Home Assistant appairées apparaîtront ici.',
   'ha.clients.paired': 'Appairé le {date}',
@@ -462,9 +386,6 @@ export const fr: Record<Keys, string> = {
     'Désactivé par défaut. Les scripts s’exécutent sous votre utilisateur.',
   'ha.polling.title': 'Fréquence des mises à jour',
   'ha.polling.description': 'Fréquence de publication des changements vers Home Assistant et MQTT.',
-  'ha.polling.sampling': 'Échantillonnage du matériel',
-  'ha.polling.sampling.value':
-    'Adaptatif, jamais plus lent que 5\u00a0s (sécurité du refroidissement)',
   'polling.intelligent': 'Intelligent',
   'polling.intelligent.desc':
     'S’adapte à votre usage\u00a0: plus rapide en jeu, plus lent au repos ou session verrouillée. Recommandé.',
@@ -529,8 +450,6 @@ export const fr: Record<Keys, string> = {
   'settings.deep.bridge.active': 'En marche',
   'settings.deep.bridge.inactive': 'Arrêté',
   'settings.service.title': 'Service et agent',
-  'settings.service.description':
-    'Le service en arrière-plan lit le matériel\u00a0; l’agent gère votre session.',
   'service.state.offline': 'Arrêté',
   'service.state.not_installed': 'En marche, non installé',
   'service.state.current': 'Installé et à jour',
@@ -558,10 +477,7 @@ export const fr: Record<Keys, string> = {
   'service.manual.toast':
     'Sous Linux, le service est fourni par le paquet. Voir les instructions affichées.',
   'service.binary_missing': 'Le programme du service est introuvable à côté de l’application.',
-  'service.status.error': 'Impossible de lire l’état du service',
   'agent.autostart.enable': 'Démarrer l’agent à l’ouverture de session',
-  'agent.autostart.hint':
-    'L’agent permet à Ctrlmate de verrouiller, régler le son, afficher des notifications et lancer des scripts dans votre session.',
   'agent.autostart.done': 'Le démarrage automatique de l’agent est configuré.',
   'agent.autostart.failed': 'Impossible de configurer le démarrage automatique de l’agent.',
   'settings.app.title': 'Application',
@@ -571,7 +487,6 @@ export const fr: Record<Keys, string> = {
   'settings.update.check': 'Rechercher des mises à jour',
   'settings.update.up_to_date': 'Vous êtes à jour',
   'settings.update.available': 'La version {version} est disponible',
-  'settings.update.install': 'Installer {version}',
   'settings.update.install.short': 'Installer et redémarrer',
   'settings.update.unsupported':
     'Les mises à jour sont gérées hors de l’application (lancement portable, gestionnaire de paquets ou version de développement).',
@@ -586,15 +501,114 @@ export const fr: Record<Keys, string> = {
   'settings.diagnostics.copied': 'Diagnostic copié.',
   'settings.diagnostics.privacy':
     'Ne contient que des versions, la disponibilité des capteurs et des réglages. Aucun jeton, code d’appairage, adresse réseau, nom d’hôte ni chemin de fichier.',
-  'settings.diagnostics.entities': 'Entités',
-  'settings.diagnostics.states': 'États',
-  'settings.diagnostics.hid': 'Périphériques USB',
-  'settings.diagnostics.backends': 'Pilotes d’éclairage',
-  'settings.diagnostics.protocol': 'Protocole',
-  'settings.diagnostics.token': 'Source du jeton',
-  'settings.about.title': 'À propos',
   'settings.about.body':
     'Ctrlmate est un logiciel libre\u00a0: supervision, éclairage, refroidissement et contrôle système de votre PC, conçu pour Home Assistant.',
   'settings.about.license': 'Licence',
   'settings.about.source': 'Code source',
+
+  // --- v0.7 interface ----------------------------------------------------------------------
+  'common.close': 'Fermer',
+  'common.continue': 'Continuer',
+  'common.back': 'Retour',
+  'common.skip': 'Passer',
+  'light.warm': 'Chaud',
+  'light.neutral': 'Neutre',
+  'light.cool': 'Froid',
+  'dash.short.cpu': 'CPU',
+  'dash.short.gpu': 'GPU',
+  'dash.short.liquid': 'Liquide',
+  'dash.hero.ok': 'Tout est sous contrôle',
+  'dash.hero.failsafe': 'Le mode sécurité est actif',
+  'dash.hero.attention_one': '{count} point demande votre attention',
+  'dash.hero.attention_other': '{count} points demandent votre attention',
+  'dash.hero.no_sensor': 'Aucun capteur de température n’est encore lisible.',
+  'dash.temps.title': 'Températures',
+  'dash.pc.title': 'Ce PC',
+  'dash.pc.gaming': 'Mode jeu',
+  'dash.ha.idle':
+    'Pas encore connecté. Appairez Home Assistant en une minute avec un code à usage unique.',
+  'dash.ha.cta': 'Connecter',
+  'dash.ha.connected': 'Connecté',
+  'dash.updates.title': 'Mises à jour',
+  'dash.updates.manage': 'Gérer',
+  'dash.memory': 'Mémoire',
+  'dash.load.title': 'Charge',
+  'palette.light.on': 'Allumer l’éclairage',
+  'palette.light.off': 'Éteindre l’éclairage',
+  'settings.tab.general': 'Général',
+  'settings.tab.hardware': 'Matériel',
+  'settings.tab.advanced': 'Avancé',
+  'settings.tab.about': 'À propos',
+  'hw.conflicts.title': 'Logiciels qui peuvent gêner',
+  'hw.conflicts.none': 'Aucun logiciel en conflit n’est en cours d’exécution.',
+  'hw.conflicts.running': 'En cours',
+  'hw.conflicts.idle': 'Fermé',
+  'hw.conflicts.hint':
+    'Il peut garder un accès exclusif à vos périphériques. Fermez-le vous-même, puis relancez l’analyse : Ctrlmate ne ferme jamais un autre programme à votre place.',
+  'hw.devices.title': 'Périphériques détectés',
+  'onb.steps': 'Étapes de la configuration',
+  'onb.step.welcome': 'Installation',
+  'onb.step.hardware': 'Matériel',
+  'onb.step.cooling': 'Refroidissement',
+  'onb.step.ha': 'Home Assistant',
+  'onb.step.prefs': 'Préférences',
+  'onb.later': 'Configurer plus tard',
+  'onb.finish': 'Ouvrir Ctrlmate',
+  'onb.replay.title': 'Guide de démarrage',
+  'onb.replay': 'Rejouer le guide de démarrage',
+  'onb.welcome.title': 'Bienvenue dans Ctrlmate',
+  'onb.welcome.body':
+    'Quelques minutes pour tout configurer. Rien n’est installé sans votre accord.',
+  'onb.install.service': 'Service en arrière-plan',
+  'onb.install.service.desc':
+    'Lit les capteurs et applique la sécurité thermique. Démarre avec votre PC.',
+  'onb.install.agent': 'Agent de session',
+  'onb.install.agent.desc':
+    'Verrouillage, son, notifications et détection des jeux pour votre session.',
+  'onb.install.firewall': 'Accès au réseau local',
+  'onb.install.firewall.desc':
+    'Permet à Home Assistant de joindre ce PC, sur votre réseau local uniquement.',
+  'onb.install.ready': 'Tout est installé',
+  'onb.install.ready.body': 'Le service tourne et l’application y est connectée.',
+  'onb.install.working': 'Installation…',
+  'onb.install.working.body':
+    'Windows demande votre accord une seule fois. Acceptez pour continuer.',
+  'onb.install.cancelled': 'L’accord a été refusé, rien n’a été installé. Vous pouvez réessayer.',
+  'onb.install.cta': 'Installer et continuer',
+  'onb.install.uac': 'Un accord administrateur est nécessaire, uniquement pour cette étape.',
+  'onb.install.check': 'Vérifier à nouveau',
+  'onb.hw.title': 'Votre matériel',
+  'onb.hw.body': 'Voici ce que Ctrlmate a trouvé sur {name}.',
+  'onb.hw.found': 'Détecté',
+  'onb.hw.none': 'Non trouvé',
+  'onb.hw.rescan': 'Relancer l’analyse',
+  'onb.cool.title': 'Refroidissement',
+  'onb.cool.body': 'Choisissez le comportement de votre PC. Vous pourrez le changer à tout moment.',
+  'onb.cool.check.title': 'Vérification de la sécurité thermique',
+  'onb.cool.check.ok': 'Tout est vérifié',
+  'onb.cool.check.warn': 'À vérifier',
+  'onb.cool.check.sensors': 'Capteurs de température',
+  'onb.cool.check.sensors.detail_one': '{count} capteur lisible',
+  'onb.cool.check.sensors.detail_other': '{count} capteurs lisibles',
+  'onb.cool.check.limits': 'Limites critiques chargées',
+  'onb.cool.check.pump': 'Protection de la pompe',
+  'onb.cool.check.watch': 'Surveillance',
+  'onb.cool.check.watch.detail':
+    'Vérifie chaque seconde et reprend la main si un capteur ne répond plus.',
+  'onb.ha.title': 'Home Assistant',
+  'onb.ha.body':
+    'Pilotez ce PC depuis votre maison connectée. Vous pouvez passer et le faire plus tard.',
+  'onb.ha.done': 'Home Assistant est connecté',
+  'onb.ha.step1':
+    'Dans Home Assistant, ouvrez Paramètres → Marketplace → Ajouter depuis un lien, et collez :',
+  'onb.ha.step2': 'Installez Ctrlmate, puis ajoutez l’intégration : elle trouve ce PC toute seule.',
+  'onb.ha.step3': 'Quand elle le demande, saisissez ce code à usage unique :',
+  'onb.prefs.title': 'Presque terminé',
+  'onb.prefs.body':
+    'Quelques préférences. Toutes peuvent être modifiées plus tard dans les réglages.',
+  'tray.panel': 'Panneau rapide',
+  'tray.protected': 'Protégé',
+  'tray.connecting': 'Connexion…',
+  'tray.offline.body': 'Ouvrez Ctrlmate pour installer ou réparer le service.',
+  'tray.open': 'Ouvrir Ctrlmate',
 };

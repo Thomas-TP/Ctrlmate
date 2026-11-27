@@ -121,7 +121,7 @@ describe('app API', () => {
     await app.setSettings({ close_to_tray: false, start_hidden: true, launch_at_login: false });
     await app.serviceInstallOrUpgrade('upgrade');
     await app.setWindowTheme('dark');
-    await app.setTrayLabels('Show', 'Quit');
+    await app.setTrayLabels('Panel', 'Show', 'Quit');
     expect(calls.map((c) => c.cmd)).toEqual([
       'app_info',
       'app_settings_set',

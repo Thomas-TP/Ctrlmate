@@ -138,6 +138,8 @@ export function installMockBridge(param = '1'): void {
         case 'set_tray_labels':
         case 'set_window_theme':
         case 'window_hide':
+        case 'open_main':
+        case 'tray_hide':
         case 'app_quit':
           return null;
         default:
