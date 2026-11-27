@@ -13,7 +13,7 @@
 //! * on shutdown the Kraken default curve, the GPU auto fan and the motherboard PWM (bridge `reset_pwm`,
 //!   confirmed) are restored.
 
-use crate::gpu::{GpuProvider, GpuSample};
+use crate::gpu::{FanControlUnavailable, GpuProvider, GpuSample};
 use crate::kraken::{ApplyReport, KrakenDriver, KrakenStatus};
 use crate::lhm_bridge::{DeepSensorSnapshot, LhmBridgeManager};
 use crate::system::CpuTemps;
@@ -91,6 +91,8 @@ pub struct RealThermalIo {
     pub kraken: Option<KrakenDriver>,
     pub gpu: GpuProvider,
     pub bridge: Arc<LhmBridgeManager>,
+    /// The GPU fans were forced by us at some point, so they must be handed back on shutdown.
+    pub gpu_overridden: bool,
 }
 
 impl ThermalIo for RealThermalIo {
@@ -112,7 +114,18 @@ impl ThermalIo for RealThermalIo {
         self.kraken.as_mut().map(|k| k.apply(pump, fan, crit))
     }
     fn gpu_fan(&mut self, percent: Option<u8>) -> Result<()> {
-        self.gpu.apply_fan_target(percent)
+        let r = self.gpu.apply_fan_target(percent);
+        let unavailable = r
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.downcast_ref::<FanControlUnavailable>().is_some());
+        match percent {
+            // A partial failure may still have forced some fans: treat them as ours.
+            Some(_) if !unavailable => self.gpu_overridden = true,
+            None if r.is_ok() => self.gpu_overridden = false,
+            _ => {}
+        }
+        r
     }
     fn cpu_native(&mut self) -> CpuTemps {
         #[cfg(target_os = "linux")]
@@ -148,7 +161,9 @@ impl ThermalIo for RealThermalIo {
         {
             error!("Shutdown: {e:#}");
         }
-        if let Err(e) = self.gpu.apply_fan_target(None) {
+        if self.gpu_overridden
+            && let Err(e) = self.gpu.apply_fan_target(None)
+        {
             error!("Shutdown: GPU fans could not be handed back to the firmware: {e:#}");
         }
         let out = self.bridge.stop();
@@ -169,7 +184,12 @@ pub fn damped(applied: Option<u8>, target: u8) -> u8 {
 
 struct Control {
     engine: CoolingEngine,
+    /// What was last written to the GPU fans: `None` = nothing known/written (the firmware curve is
+    /// active), `Some(None)` = handed back to the firmware, `Some(Some(p))` = forced to `p` %.
     applied_gpu: Option<Option<u8>>,
+    /// NVML refused fan control (no permission / not supported): stop trying, the GPU keeps its
+    /// own curve. This is not a write failure and must not push the engine into the failsafe.
+    gpu_fan_unavailable: bool,
     applied_case: Option<u8>,
     seen_bridge_gen: u64,
     last_targets: Option<CoolingTargets>,
@@ -240,13 +260,26 @@ fn tick(
     {
         all_ok = false; // already logged at error by the driver; retried next tick
     }
-    if io.has_gpu_fan_control() && ctl.applied_gpu != Some(t.gpu_fan_percent) {
-        match io.gpu_fan(t.gpu_fan_percent) {
-            Ok(()) => ctl.applied_gpu = Some(t.gpu_fan_percent),
-            Err(e) => {
-                all_ok = false;
-                error!("GPU fan write failed (will retry): {e:#}");
-            }
+    if io.has_gpu_fan_control() && !ctl.gpu_fan_unavailable {
+        let wanted = t.gpu_fan_percent;
+        match (ctl.applied_gpu, wanted) {
+            // Never overridden and the engine wants the firmware curve: it is already active, so
+            // there is nothing to write (and nothing to fail on a machine without NVML fan rights).
+            (None, None) => ctl.applied_gpu = Some(None),
+            (applied, wanted) if applied != Some(wanted) => match io.gpu_fan(wanted) {
+                Ok(()) => ctl.applied_gpu = Some(wanted),
+                Err(e) if e.downcast_ref::<FanControlUnavailable>().is_some() => {
+                    warn!(
+                        "{e:#}; the GPU keeps its own fan curve (run the service as administrator/root to allow fan control)"
+                    );
+                    ctl.gpu_fan_unavailable = true;
+                }
+                Err(e) => {
+                    all_ok = false;
+                    error!("GPU fan write failed (will retry): {e:#}");
+                }
+            },
+            _ => {}
         }
     }
     if io.bridge_running() {
@@ -310,6 +343,7 @@ impl CoolingRuntime {
             ctl: Mutex::new(Control {
                 engine: CoolingEngine::new(thresholds, now),
                 applied_gpu: None,
+                gpu_fan_unavailable: false,
                 applied_case: None,
                 seen_bridge_gen: 0,
                 last_targets: None,
@@ -395,7 +429,11 @@ impl CoolingRuntime {
 
     /// Hardware was re-probed: rewrite every target.
     pub fn invalidate(&self) {
-        lock(&self.shared.ctl).applied_gpu = None;
+        {
+            let mut ctl = lock(&self.shared.ctl);
+            ctl.applied_gpu = None;
+            ctl.gpu_fan_unavailable = false;
+        }
         lock(&self.shared.io).invalidate_kraken();
         self.wake();
     }
@@ -447,6 +485,8 @@ pub(crate) mod mock {
         pub deep_cpu: Option<f64>,
         pub case_fail: bool,
         pub gpu_fan_fail: bool,
+        pub gpu_fan_unavailable: bool,
+        pub gpu_fan_attempts: usize,
         // recorded
         pub pump_writes: Vec<u8>,
         pub fan_writes: Vec<u8>,
@@ -519,6 +559,12 @@ pub(crate) mod mock {
         }
         fn gpu_fan(&mut self, percent: Option<u8>) -> Result<()> {
             let mut s = lock(&self.0);
+            s.gpu_fan_attempts += 1;
+            if s.gpu_fan_unavailable {
+                return Err(anyhow::Error::new(FanControlUnavailable(
+                    "no permission".into(),
+                )));
+            }
             if s.gpu_fan_fail {
                 anyhow::bail!("nvml refused");
             }
@@ -570,6 +616,7 @@ mod tests {
         let ctl = Control {
             engine: CoolingEngine::new(ThermalThresholds::default(), Instant::now()),
             applied_gpu: None,
+            gpu_fan_unavailable: false,
             applied_case: None,
             seen_bridge_gen: 0,
             last_targets: None,
@@ -612,10 +659,9 @@ mod tests {
         let s = lock(&s);
         assert!(!s.pump_writes.is_empty() && !s.fan_writes.is_empty());
         assert!(s.pump_writes.iter().all(|&p| p >= MIN_PUMP_PERCENT));
-        assert_eq!(
-            s.gpu_fan_writes,
-            vec![None],
-            "GPU fans stay with the firmware outside failsafe"
+        assert!(
+            s.gpu_fan_writes.is_empty(),
+            "GPU fans stay with the firmware outside failsafe: nothing is written"
         );
     }
 
@@ -753,13 +799,52 @@ mod tests {
     #[test]
     fn gpu_fan_failures_are_retried() {
         let (mut io, mut ctl, s) = setup(base());
+        // A critical GPU temperature makes the engine force the GPU fans to 100 %.
+        lock(&s).gpu_temp = Some(90.0);
         lock(&s).gpu_fan_fail = true;
         let t0 = Instant::now();
         tick(io.as_mut(), &mut ctl, 0, false, t0);
         assert!(ctl.applied_gpu.is_none());
         lock(&s).gpu_fan_fail = false;
         tick(io.as_mut(), &mut ctl, 0, false, t0 + Duration::from_secs(1));
+        assert_eq!(ctl.applied_gpu, Some(Some(100)));
+    }
+
+    #[test]
+    fn firmware_controlled_gpu_fans_are_never_written_and_never_fail_the_engine() {
+        // Regression: a non-admin run (NVML refuses fan writes) used to latch the failsafe with
+        // `WriteFailed`, because the first tick "handed the fans back" although they were never taken.
+        let (mut io, mut ctl, s) = setup(base());
+        lock(&s).gpu_fan_fail = true;
+        lock(&s).gpu_fan_unavailable = true;
+        let t0 = Instant::now();
+        for i in 0..6 {
+            tick(io.as_mut(), &mut ctl, 0, false, t0 + Duration::from_secs(i));
+        }
+        assert_eq!(
+            lock(&s).gpu_fan_attempts,
+            0,
+            "no write while the firmware is in control"
+        );
         assert_eq!(ctl.applied_gpu, Some(None));
+        assert_eq!(ctl.engine.policy().state, CoolingState::Normal);
+    }
+
+    #[test]
+    fn unavailable_gpu_fan_control_is_not_a_write_failure_and_is_tried_once() {
+        let (mut io, mut ctl, s) = setup(base());
+        lock(&s).gpu_temp = Some(90.0); // critical: the engine wants the GPU fans at 100 %
+        lock(&s).gpu_fan_unavailable = true;
+        let t0 = Instant::now();
+        for i in 0..6 {
+            tick(io.as_mut(), &mut ctl, 0, false, t0 + Duration::from_secs(i));
+        }
+        assert!(ctl.gpu_fan_unavailable);
+        assert_eq!(lock(&s).gpu_fan_attempts, 1, "no endless retries");
+        // The failsafe is there because of the temperature, not because of a failed write.
+        assert_eq!(ctl.engine.policy().reason, Some(CoolingReason::Temperature));
+        // The other actuators were still driven to the failsafe floor.
+        assert_eq!(lock(&s).pump_writes.last(), Some(&100));
     }
 
     #[test]

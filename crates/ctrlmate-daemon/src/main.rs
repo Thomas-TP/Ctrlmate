@@ -111,7 +111,11 @@ fn init_logging(cli: &Cli) {
             }
         }
     }
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    // Logs go to stderr so that `--print-telemetry` (JSON on stdout) can be piped or parsed.
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 async fn wait_for_termination() {

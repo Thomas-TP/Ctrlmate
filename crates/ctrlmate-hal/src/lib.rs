@@ -258,6 +258,7 @@ impl HardwareCollector {
                 kraken,
                 gpu,
                 bridge: Arc::clone(&bridge),
+                gpu_overridden: false,
             }),
             opts.thermal,
             opts.watchdog_period,
