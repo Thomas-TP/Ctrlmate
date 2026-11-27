@@ -1,53 +1,44 @@
-import { CommandPalette } from './components/CommandPalette';
-import { ConnectionBanner, ConnectionScreen } from './components/ConnectionState';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { Shell } from './components/Shell';
-import { Toasts } from './components/ui/Toasts';
-import { useTheme, useTrayLabels } from './hooks/useTheme';
-import { I18nProvider } from './i18n';
-import { Cooling } from './screens/Cooling';
-import { HomeAssistant } from './screens/HomeAssistant';
-import { Lighting } from './screens/Lighting';
-import { Overview } from './screens/Overview';
-import { Settings } from './screens/Settings';
-import { System } from './screens/System';
+import { useEffect } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { app } from './api/app';
+import { useTheme } from './hooks/useTheme';
+import { I18nProvider, useI18n } from './i18n';
 import { useDaemonBridge } from './store/bridge';
-import { useDaemon } from './store/daemon';
-import { useNav } from './store/nav';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+import { MainView } from './views/main/MainView';
+import { TrayView } from './views/tray/TrayView';
 
-function Screens() {
-  const screen = useNav((s) => s.screen);
-  const snapshot = useDaemon((s) => s.snapshot);
-  useTrayLabels();
-
-  // Settings stays reachable without a daemon (language, theme, service install).
-  if (screen === 'settings') return <Settings snapshot={snapshot} />;
-  if (!snapshot) return <ConnectionScreen />;
-  return (
-    <>
-      <ConnectionBanner />
-      {screen === 'overview' && <Overview snapshot={snapshot} />}
-      {screen === 'cooling' && <Cooling snapshot={snapshot} />}
-      {screen === 'lighting' && <Lighting snapshot={snapshot} />}
-      {screen === 'system' && <System snapshot={snapshot} />}
-      {screen === 'homeAssistant' && <HomeAssistant snapshot={snapshot} />}
-    </>
-  );
+/**
+ * The same bundle serves two windows: the quick panel (`?view=tray`, or the Tauri window labelled
+ * `tray`) and the app itself.
+ */
+export function isTrayView(): boolean {
+  if (new URLSearchParams(window.location.search).get('view') === 'tray') return true;
+  try {
+    return '__TAURI_INTERNALS__' in window && getCurrentWindow().label === 'tray';
+  } catch {
+    return false;
+  }
 }
 
+/** Pushes the translated tray menu labels to the Rust side (language changes included). */
+function useTrayLabels(enabled: boolean): void {
+  const { t, locale } = useI18n();
+  useEffect(() => {
+    if (!enabled) return;
+    app.setTrayLabels(t('tray.panel'), t('tray.show'), t('tray.quit')).catch(() => {
+      /* not running inside Tauri */
+    });
+  }, [t, locale, enabled]);
+}
+
+const TRAY = isTrayView();
+
 function Frame() {
-  const screen = useNav((s) => s.screen);
-  useTheme();
+  useTheme(!TRAY);
   useDaemonBridge();
-  return (
-    <Shell>
-      <ErrorBoundary resetKey={screen}>
-        <Screens />
-      </ErrorBoundary>
-      <CommandPalette />
-      <Toasts />
-    </Shell>
-  );
+  useTrayLabels(!TRAY);
+  return <ErrorBoundary>{TRAY ? <TrayView /> : <MainView />}</ErrorBoundary>;
 }
 
 export default function App() {

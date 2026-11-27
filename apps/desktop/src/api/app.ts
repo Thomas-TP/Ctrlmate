@@ -75,9 +75,13 @@ export const app = {
   updateInstall: () => call<null>('app_update_install'),
   settings: () => call<AppSettings>('app_settings_get'),
   setSettings: (settings: AppSettings) => call<null>('app_settings_set', { settings }),
-  setTrayLabels: (show: string, quit: string) => call<null>('set_tray_labels', { show, quit }),
+  setTrayLabels: (panel: string, show: string, quit: string) =>
+    call<null>('set_tray_labels', { panel, show, quit }),
   setWindowTheme: (theme: 'light' | 'dark' | null) => call<null>('set_window_theme', { theme }),
   hide: () => call<null>('window_hide'),
+  /** Shows the main window, optionally opening a section (`SheetId`). */
+  openMain: (sheet?: string) => call<null>('open_main', { sheet: sheet ?? null }),
+  hideTray: () => call<null>('tray_hide'),
   quit: () => call<null>('app_quit'),
 };
 

@@ -138,7 +138,8 @@ const descriptor = (
   name,
   platform,
   child_device_id: child,
-  device_class: null,
+  // Like the real manifest: temperature sensors carry the `temperature` device class.
+  device_class: platform === 'sensor' && unit === '°C' ? 'temperature' : null,
   state_class: null,
   unit_of_measurement: unit,
   icon: null,

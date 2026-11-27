@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ctrlmate – concepts d'interface</title>
+<style>
+:root{
+  --bg:#f6f6f4; --surface:#fff; --surface-2:#f0f0ed; --line:#e6e6e1; --text:#16161a; --muted:#6b6b73; --subtle:#9a9aa2;
+  --accent:#4f46e5; --accent-soft:#eceafd; --ok:#17a35f; --ok-soft:#e3f6ec; --warn:#c77a05; --shadow:0 1px 2px rgba(20,20,30,.05),0 8px 24px rgba(20,20,30,.06);
+  --r:14px; font-family:Inter,"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+}
+:root[data-theme=dark]{
+  --bg:#0e0e11; --surface:#17171b; --surface-2:#1e1e23; --line:#2a2a31; --text:#f2f2f4; --muted:#a0a0aa; --subtle:#6f6f79;
+  --accent:#8b86ff; --accent-soft:#25244a; --ok:#3ecf8e; --ok-soft:#14301f; --warn:#f0a73a; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;min-height:100vh}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.top{display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+.top h1{font-size:15px;font-weight:600;margin-right:auto}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:10px;padding:3px;gap:2px}
+.seg button{padding:6px 12px;border-radius:8px;color:var(--muted);font-weight:500}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.note{padding:0 24px 12px;color:var(--muted);max-width:900px}
+.stage{padding:0 24px 40px}
+.win{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;position:relative;height:640px;max-width:1180px}
+.concept{display:none}.concept.on{display:block}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:500;background:var(--ok-soft);color:var(--ok)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;text-align:left;transition:border-color .15s,box-shadow .15s,transform .15s}
+button.card:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-1px)}
+.label{font-size:12px;color:var(--muted);font-weight:500}
+.big{font-size:34px;font-weight:600;letter-spacing:-.02em}
+.small{font-size:12px;color:var(--subtle)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:6px 12px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-weight:500;font-size:13px}
+.chip.on{background:var(--accent);color:#fff}
+.bar{height:6px;border-radius:6px;background:var(--surface-2);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);border-radius:6px}
+kbd{font:12px ui-monospace,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--muted)}
+
+/* A */
+.a-head{display:flex;align-items:center;gap:12px;padding:18px 24px;border-bottom:1px solid var(--line)}
+.a-head b{font-size:16px}
+.a-search{margin-left:auto;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;color:var(--muted);min-width:260px}
+.a-search kbd{margin-left:auto}
+.a-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;padding:24px;overflow:auto;height:calc(100% - 69px)}
+.t-cool{grid-column:span 3;grid-row:span 2}.t-temp{grid-column:span 3}.t-light{grid-column:span 2}.t-ha{grid-column:span 1}
+.t-act{grid-column:span 3}
+.swatches{display:flex;gap:8px;margin-top:12px}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:380px;background:var(--surface);border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);padding:24px;display:flex;flex-direction:column;gap:16px;z-index:5}
+.drawer.open{transform:none}
+.drawer .x{position:absolute;top:16px;right:16px;color:var(--muted);font-size:18px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;width:100%;text-align:left}
+.opt.on{border-color:var(--accent);background:var(--accent-soft)}
+.opt b{display:block}.opt span{color:var(--muted);font-size:13px}
+.pal-wrap{position:absolute;inset:0;background:rgba(10,10,20,.25);display:none;align-items:flex-start;justify-content:center;padding-top:90px;z-index:10}
+.pal-wrap.open{display:flex}
+.pal{width:520px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.25);overflow:hidden}
+.pal input{width:100%;padding:16px 18px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);font:inherit;font-size:15px;outline:0}
+.pal li{list-style:none;padding:10px 18px;display:flex;justify-content:space-between;cursor:pointer}
+.pal li:hover,.pal li.sel{background:var(--accent-soft)}
+.pal li span{color:var(--subtle);font-size:12px}
+/* B */
+.b{display:grid;grid-template-columns:64px 1fr;height:100%}
+.rail{border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0;background:var(--surface-2)}
+.rail button{width:40px;height:40px;border-radius:10px;color:var(--muted);font-size:18px;position:relative}
+.rail button[aria-current=true]{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+.b-main{padding:32px 40px;overflow:auto}
+.b-main h2{font-size:22px;letter-spacing:-.01em;margin-bottom:4px}
+.curve{margin-top:24px;border:1px solid var(--line);border-radius:var(--r);padding:20px}
+/* C */
+.desk{height:100%;background:linear-gradient(135deg,#cfd8ff,#f4e4ff 55%,#ffe3d6);position:relative}
+:root[data-theme=dark] .desk{background:linear-gradient(135deg,#1c2150,#2a1f45 55%,#40261f)}
+.task{position:absolute;left:0;right:0;bottom:0;height:44px;background:rgba(255,255,255,.65);backdrop-filter:blur(20px);display:flex;justify-content:flex-end;align-items:center;gap:14px;padding:0 18px;color:#222}
+:root[data-theme=dark] .task{background:rgba(20,20,24,.7);color:#ddd}
+.task .ic{width:22px;height:22px;border-radius:6px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+.fly{position:absolute;right:16px;bottom:56px;width:340px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.25);padding:18px;display:flex;flex-direction:column;gap:14px}
+.fly hr{border:0;border-top:1px solid var(--line)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.range{width:100%;accent-color:var(--accent)}
+.act{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.act button{padding:10px;border-radius:10px;background:var(--surface-2);font-size:12px;font-weight:500}
+.act button:hover{background:var(--accent-soft);color:var(--accent)}
+.link{color:var(--accent);font-weight:500}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Ctrlmate · concepts d'interface</h1>
+  <div class="seg" id="tabs" role="group" aria-label="Concept">
+    <button data-c="a" aria-pressed="true">A · Tableau de bord</button>
+    <button data-c="b" aria-pressed="false">B · Rail minimal</button>
+    <button data-c="c" aria-pressed="false">C · Tray d'abord</button>
+  </div>
+  <div class="seg" id="theme" role="group" aria-label="Thème">
+    <button data-t="light" aria-pressed="true">Clair</button>
+    <button data-t="dark" aria-pressed="false">Sombre</button>
+  </div>
+</div>
+<p class="note" id="note"></p>
+
+<div class="stage">
+<!-- ============ A ============ -->
+<section class="concept on win" id="a">
+  <div class="a-head">
+    <b>Ctrlmate</b><span class="pill"><i class="dot"></i>PC protégé</span>
+    <button class="a-search" id="openPal"><span>⌕</span> Rechercher ou lancer une action <kbd>Ctrl K</kbd></button>
+  </div>
+  <div class="a-grid">
+    <button class="card t-cool" data-drawer="cool">
+      <div class="label">Refroidissement</div>
+      <div class="big mono" style="margin-top:6px">31 °C <span class="small" style="font-size:14px;font-weight:400">liquide</span></div>
+      <div class="small">Pompe 60 % · Ventilateurs 38 % · Preset Équilibré</div>
+      <svg viewBox="0 0 300 90" style="width:100%;margin-top:18px"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".25"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><path d="M0 60 C40 55 60 40 100 44 S170 62 210 38 S270 30 300 34 V90 H0Z" fill="url(#g)"/><path d="M0 60 C40 55 60 40 100 44 S170 62 210 38 S270 30 300 34" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>
+      <div class="chips" style="margin-top:14px"><span class="chip">Silencieux</span><span class="chip on">Équilibré</span><span class="chip">Performance</span><span class="chip">Jeu</span></div>
+    </button>
+    <button class="card t-temp" data-drawer="temp">
+      <div class="label">Températures</div>
+      <div style="display:grid;gap:12px;margin-top:12px">
+        <div><div class="row"><span>Ryzen 9 7900X3D</span><b class="mono">54 °C</b></div><div class="bar"><i style="width:45%"></i></div></div>
+        <div><div class="row"><span>RTX 5070</span><b class="mono">41 °C</b></div><div class="bar"><i style="width:33%"></i></div></div>
+        <div><div class="row"><span>Samsung 990 PRO</span><b class="mono">38 °C</b></div><div class="bar"><i style="width:30%"></i></div></div>
+      </div>
+    </button>
+    <button class="card t-light" data-drawer="light">
+      <div class="label">Éclairage</div><div style="margin-top:4px;font-weight:600">Blanc chaud · 3000 K</div>
+      <div class="swatches"><span class="sw" style="background:#ffb46b"></span><span class="sw" style="background:#fff3e0"></span><span class="sw" style="background:#cfe3ff"></span><span class="sw" style="background:#7b6cff"></span></div>
+    </button>
+    <button class="card t-ha" data-drawer="ha">
+      <div class="label">Home Assistant</div><div style="margin-top:4px;font-weight:600">Connecté</div><div class="small">1 appareil</div>
+    </button>
+    <div class="card t-act">
+      <div class="label" style="margin-bottom:10px">Actions rapides</div>
+      <div class="act"><button>Verrouiller</button><button>Écrans off</button><button>Veille</button></div>
+    </div>
+  </div>
+  <aside class="drawer" id="drawer"><button class="x" id="closeDrawer" aria-label="Fermer">✕</button><div id="drawerBody"></div></aside>
+  <div class="pal-wrap" id="palWrap"><div class="pal"><input id="palIn" placeholder="Tapez une action…"><ul id="palList"></ul></div></div>
+</section>
+
+<!-- ============ B ============ -->
+<section class="concept win" id="b">
+  <div class="b">
+    <nav class="rail" aria-label="Sections">
+      <button aria-current="true" title="Refroidissement">❄</button><button title="Éclairage">◐</button><button title="Système">▭</button><button title="Home Assistant">⌂</button><button title="Réglages" style="margin-top:auto">⚙</button>
+    </nav>
+    <div class="b-main">
+      <div class="row"><div><h2>Refroidissement</h2><div class="label">Preset Équilibré · PC protégé</div></div><span class="pill"><i class="dot"></i>Sécurité active</span></div>
+      <div class="chips" style="margin-top:20px"><span class="chip">Silencieux</span><span class="chip on">Équilibré</span><span class="chip">Performance</span><span class="chip">Jeu</span></div>
+      <div class="curve"><div class="label">Courbe pompe / ventilateurs selon la température liquide</div>
+        <svg viewBox="0 0 600 180" style="width:100%;margin-top:12px"><g stroke="var(--line)"><path d="M0 30H600M0 90H600M0 150H600"/></g><path d="M0 140 C150 135 250 110 330 80 S500 30 600 25" fill="none" stroke="var(--accent)" stroke-width="3"/><circle cx="260" cy="104" r="6" fill="var(--accent)"/></svg>
+        <div class="small">Point actuel : 31 °C → pompe 60 %</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ C ============ -->
+<section class="concept win" id="c">
+  <div class="desk">
+    <div class="task"><span>FR</span><span class="mono">21:42</span><div class="ic" id="icoTray">C</div></div>
+    <div class="fly" id="fly">
+      <div class="row"><b>Ctrlmate</b><span class="pill"><i class="dot"></i>Protégé</span></div>
+      <div class="row"><div><div class="big mono" style="font-size:28px">31 °C</div><div class="small">Liquide · pompe 60 %</div></div><div style="text-align:right"><div class="mono">CPU 54° · GPU 41°</div><div class="small">SSD 38°</div></div></div>
+      <hr>
+      <div><div class="label" style="margin-bottom:8px">Refroidissement</div><div class="chips"><span class="chip">Silencieux</span><span class="chip on">Équilibré</span><span class="chip">Perf.</span><span class="chip">Jeu</span></div></div>
+      <div><div class="row"><span class="label">Éclairage</span><span class="small mono">3000 K</span></div><input class="range" type="range" min="2000" max="6500" value="3000" aria-label="Température de couleur"></div>
+      <div class="act"><button>Verrouiller</button><button>Écrans off</button><button>Veille</button></div>
+      <hr>
+      <div class="row"><span class="small">Home Assistant connecté</span><button class="link">Ouvrir Ctrlmate →</button></div>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+const notes={
+ a:"Tout est visible d'un coup. Cliquez une tuile : un panneau latéral s'ouvre sans quitter la page. Essayez Ctrl+K pour lancer n'importe quelle action au clavier.",
+ b:"Plus classique : un rail d'icônes très fin et de grandes vues plein écran, une par domaine. Simple et prévisible, mais on voit une seule chose à la fois.",
+ c:"Pour l'usage quotidien : on clique l'icône de la barre des tâches et un panneau rapide apparaît. La grande fenêtre ne sert qu'à configurer."
+};
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function show(c){$$('.concept').forEach(e=>e.classList.toggle('on',e.id===c));$$('#tabs button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.c===c));$('#note').textContent=notes[c]}
+$('#tabs').onclick=e=>{const b=e.target.closest('button');if(b)show(b.dataset.c)};
+$('#theme').onclick=e=>{const b=e.target.closest('button');if(!b)return;document.documentElement.dataset.theme=b.dataset.t;$$('#theme button').forEach(x=>x.setAttribute('aria-pressed',x===b))};
+show('a');
+// chips
+document.addEventListener('click',e=>{const c=e.target.closest('.chips .chip');if(!c)return;c.parentElement.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on')});
+// drawer
+const D={
+ cool:()=>`<h3 style="font-size:18px">Refroidissement</h3><p class="label">Choisissez un comportement. La sécurité thermique reste active.</p>
+  ${[['Silencieux','Priorité au silence, ventilateurs lents.'],['Équilibré','Le bon compromis au quotidien.',1],['Performance','Refroidit plus fort, plus de bruit.'],['Jeu',"S’adapte dès qu’un jeu est détecté."]].map(o=>`<button class="opt ${o[2]?'on':''}"><div><b>${o[0]}</b><span>${o[1]}</span></div></button>`).join('')}
+  <div class="card" style="background:var(--ok-soft);border-color:transparent"><b style="color:var(--ok)">Protection thermique active</b><div class="small">Pompe jamais sous 50 %. Mode d'urgence automatique en cas de surchauffe.</div></div>`,
+ temp:()=>`<h3 style="font-size:18px">Températures</h3><p class="label">Historique sur 10 minutes</p><svg viewBox="0 0 300 100" style="width:100%"><path d="M0 60 L50 55 L100 62 L150 40 L200 48 L250 44 L300 46" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>`,
+ light:()=>`<h3 style="font-size:18px">Éclairage</h3><p class="label">Température de couleur</p><input class="range" type="range" min="2000" max="6500" value="3000"><div class="swatches"><span class="sw" style="background:#ffb46b"></span><span class="sw" style="background:#fff3e0"></span><span class="sw" style="background:#cfe3ff"></span></div>`,
+ ha:()=>`<h3 style="font-size:18px">Home Assistant</h3><p class="label">Connecté depuis 3 jours</p><div class="card"><b>Code PIN d'appairage</b><div class="big mono">482 917</div><div class="small">Valable 5 minutes</div></div>`
+};
+$$('[data-drawer]').forEach(b=>b.onclick=()=>{$('#drawerBody').innerHTML=D[b.dataset.drawer]();$('#drawer').classList.add('open')});
+$('#closeDrawer').onclick=()=>$('#drawer').classList.remove('open');
+// palette
+const cmds=[['Passer en mode Silencieux','Refroidissement'],['Passer en mode Jeu','Refroidissement'],['Éclairage : blanc chaud','Éclairage'],['Éclairage : blanc froid','Éclairage'],['Verrouiller la session','Système'],['Mettre en veille','Système'],['Afficher le code PIN Home Assistant','Home Assistant']];
+function render(q=''){$('#palList').innerHTML=cmds.filter(c=>c[0].toLowerCase().includes(q.toLowerCase())).map((c,i)=>`<li class="${i?'':'sel'}">${c[0]}<span>${c[1]}</span></li>`).join('')}
+function pal(o){$('#palWrap').classList.toggle('open',o);if(o){render();$('#palIn').value='';$('#palIn').focus()}}
+$('#openPal').onclick=()=>pal(true);
+$('#palWrap').onclick=e=>{if(e.target.id==='palWrap'||e.target.closest('li'))pal(false)};
+$('#palIn').oninput=e=>render(e.target.value);
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&$('#a').classList.contains('on')){e.preventDefault();pal(true)}if(e.key==='Escape'){pal(false);$('#drawer').classList.remove('open')}});
+</script>
+</body>
+</html>

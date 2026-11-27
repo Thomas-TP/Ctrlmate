@@ -52,9 +52,19 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
 // The payload type is asserted on purpose: each caller knows the shape of its event.
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 export async function on<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
-  return listen<T>(event, (e) => handler(e.payload));
+  const off = await listen<T>(event, (e) => handler(e.payload));
+  // Unlistening can fail when the window is already gone: that must never surface as an error.
+  return () => {
+    try {
+      void Promise.resolve(off()).catch(() => undefined);
+    } catch {
+      /* nothing left to unregister */
+    }
+  };
 }
 
 export const EVENT_DAEMON = 'daemon://event';
 export const EVENT_CONNECTION = 'daemon://connection';
 export const EVENT_UPDATE_PROGRESS = 'app-update://progress';
+/** The tray panel asks the main window to open a section (payload: a `SheetId`). */
+export const EVENT_OPEN_SHEET = 'ui://open';
