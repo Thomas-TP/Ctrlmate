@@ -221,7 +221,7 @@ jobs:
             || echo "::warning::no previous ${{ matrix.channel }} release found, producing a full package only"
       - name: Build packages
         run: packaging/linux/pack-linux.sh --arch ${{ matrix.arch }} --formats deb,rpm,appimage
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.4
       - name: Sign packages (cosign keyless; GPG when a key is configured)
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
