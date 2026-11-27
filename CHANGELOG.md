@@ -3,6 +3,20 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-11-27
+
+Patch release found by running 0.6.1 on real hardware.
+
+### Fixed
+- Cooling: a daemon without permission to control the GPU fans (NVML "no permission" or "not supported":
+  non-administrator or non-root run, GPUs without fan control) no longer latches the failsafe. The first
+  watchdog tick used to "hand the fans back to the firmware" although they were never taken, the write
+  failed three times and the engine entered the failsafe with reason `write_failed` for good, with an
+  error logged every second. Fans are now written only when the engine really forces them (failsafe), an
+  "unavailable" answer is recorded once and never counts as a write failure, and shutdown only restores
+  fans that were forced.
+- The daemon writes its logs to stderr, so `ctrlmated --print-telemetry` prints pure JSON on stdout.
+
 ## [0.6.1] - 2026-11-26
 
 Maintenance release: dependencies, build and release fixes on top of 0.6.0.

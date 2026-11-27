@@ -76,7 +76,7 @@ internal sealed class SnapshotDto
 
 internal static class Program
 {
-    internal const string Version = "0.6.1";
+    internal const string Version = "0.6.2";
 
     /// Chassis fans are never commanded below this duty (documented floor).
     internal const int ChassisFanFloorPercent = 25;

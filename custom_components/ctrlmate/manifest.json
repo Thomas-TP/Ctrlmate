@@ -10,6 +10,6 @@
   "issue_tracker": "https://github.com/Thomas-TP/Ctrlmate/issues",
   "loggers": ["custom_components.ctrlmate"],
   "requirements": [],
-  "version": "0.6.1",
+  "version": "0.6.2",
   "zeroconf": ["_ctrlmate._tcp.local."]
 }

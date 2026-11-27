@@ -9,8 +9,22 @@
 use anyhow::{Result, bail};
 use nvml_wrapper::Nvml;
 use nvml_wrapper::enum_wrappers::device::{Clock, TemperatureSensor};
+use nvml_wrapper::error::NvmlError;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
+
+/// GPU fan control is out of reach for this process: NVML answered "no permission" or "not
+/// supported" for every fan. Not a hardware fault: the GPU keeps its own fan curve.
+#[derive(Debug)]
+pub struct FanControlUnavailable(pub String);
+
+impl std::fmt::Display for FanControlUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GPU fan control unavailable: {}", self.0)
+    }
+}
+
+impl std::error::Error for FanControlUnavailable {}
 
 #[derive(Debug, Clone)]
 pub struct GpuDescriptor {
@@ -158,17 +172,23 @@ impl GpuProvider {
 
     /// Sets the GPU fans (NVML) to `fan_percent`, or hands them back to the firmware curve with
     /// `None`. Returns an error when any fan could not be written; NVIDIA only (AMD is a no-op).
+    ///
+    /// When every failure is "no permission" or "not supported" the error is a
+    /// [`FanControlUnavailable`] (downcast it): the GPU simply keeps its own fan curve, which is not
+    /// a hardware fault and must not be retried forever.
     pub fn apply_fan_target(&self, fan_percent: Option<u8>) -> Result<()> {
         let Some(nvml) = &self.nvml else {
             return Ok(());
         };
         let mut failures = Vec::new();
+        let mut hard_failures = 0usize;
         for (desc, backend) in self.descriptors.iter().zip(&self.backends) {
             let Backend::Nvml { nvml_index } = backend else {
                 continue;
             };
             let Ok(mut dev) = nvml.device_by_index(*nvml_index) else {
                 failures.push(format!("GPU #{} unavailable", desc.index));
+                hard_failures += 1;
                 continue;
             };
             let fan_count = dev.num_fans().unwrap_or(1);
@@ -178,12 +198,19 @@ impl GpuProvider {
                     None => dev.set_default_fan_speed(fan_idx),
                 };
                 if let Err(err) = r {
+                    if !matches!(err, NvmlError::NoPermission | NvmlError::NotSupported) {
+                        hard_failures += 1;
+                    }
                     failures.push(format!("GPU #{} fan #{fan_idx}: {err}", desc.index));
                 }
             }
         }
         if failures.is_empty() {
             Ok(())
+        } else if hard_failures == 0 {
+            Err(anyhow::Error::new(FanControlUnavailable(
+                failures.join("; "),
+            )))
         } else {
             bail!("{}", failures.join("; "))
         }
